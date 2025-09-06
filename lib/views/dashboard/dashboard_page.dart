@@ -1,0 +1,810 @@
+import 'package:flutter/material.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
+import '../../core/constants.dart';
+
+class DashboardPage extends StatefulWidget {
+  const DashboardPage({super.key});
+
+  @override
+  State<DashboardPage> createState() => _DashboardPageState();
+}
+
+class _DashboardPageState extends State<DashboardPage> {
+  String name = '';
+  String role = '';
+  bool isLoading = true;
+  int unreadCount = 0;
+  String? groupId;
+  String? groupName;
+  List<Map<String, dynamic>> recentNotifications = [];
+  List<Map<String, dynamic>> userGroups = [];
+  String? selectedGroupId;
+  Future<double> _calculateGroupMemberAverageSum() async {
+    double totalPromedios = 0.0;
+
+    for (final group in userGroups) {
+      final groupId = group['groupId'];
+
+      // Obtener todos los gastos del grupo
+      final gastos = await Supabase.instance.client
+          .from('expenses')
+          .select('amount')
+          .eq('group_id', groupId);
+
+      // Obtener todos los miembros del grupo
+      final miembros = await Supabase.instance.client
+          .from('group_members')
+          .select('user_id')
+          .eq('group_id', groupId);
+
+      // Calcular el total de gastos
+      final totalGasto = gastos.fold<double>(
+        0.0,
+        (sum, item) => sum + (item['amount'] as num).toDouble(),
+      );
+
+      // Calcular el promedio por miembro
+      final cantidadMiembros = miembros.isNotEmpty ? miembros.length : 1;
+      final promedioPorMiembro = totalGasto / cantidadMiembros;
+
+      // Sumar ese promedio al total
+      totalPromedios += promedioPorMiembro;
+    }
+
+    return totalPromedios;
+  }
+
+  @override
+  void initState() {
+    super.initState();
+
+    _loadUserData();
+    _loadNotificationSummary();
+    _loadUserGroups();
+
+    final channel = Supabase.instance.client.channel('group_members_channel');
+
+    channel.onPostgresChanges(
+      event: PostgresChangeEvent.insert,
+      schema: 'public',
+      table: 'group_members',
+      callback: (payload) {
+        final newRecord = payload.newRecord;
+        final userId = Supabase.instance.client.auth.currentUser?.id;
+        if (newRecord != null && newRecord['user_id'] == userId) {
+          _loadUserGroups();
+        }
+      },
+    );
+
+    channel.subscribe();
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    _loadUserGroups();
+  }
+
+  Future<List<Map<String, dynamic>>> _loadRecentExpensesAcrossGroups() async {
+    final userId = Supabase.instance.client.auth.currentUser?.id;
+    if (userId == null || userGroups.isEmpty) return [];
+
+    final groupIds = userGroups.map((g) => g['groupId']).toList();
+
+    final response = await Supabase.instance.client
+        .from('expenses')
+        .select('title, amount, date, group_id, groups(name)')
+        .filter('group_id', 'in', '(${groupIds.join(',')})')
+        .order('date', ascending: false)
+        .limit(10);
+
+    return List<Map<String, dynamic>>.from(response);
+  }
+
+  Future<void> _loadUserData() async {
+    final userId = Supabase.instance.client.auth.currentUser?.id;
+    if (userId == null) {
+      Navigator.pushReplacementNamed(context, '/login');
+      return;
+    }
+
+    final response = await Supabase.instance.client
+        .from('users')
+        .select()
+        .eq('id', userId)
+        .single();
+
+    if (!mounted) return;
+    setState(() {
+      name = response['name'] ?? '';
+      role = response['role'] ?? 'user';
+      isLoading = false;
+    });
+  }
+
+  Future<void> _loadNotificationSummary() async {
+    final userId = Supabase.instance.client.auth.currentUser?.id;
+    if (userId == null) return;
+
+    final unread = await Supabase.instance.client
+        .from('notifications')
+        .select()
+        .eq('user_id', userId)
+        .eq('read', false);
+
+    final recent = await Supabase.instance.client
+        .from('notifications')
+        .select()
+        .eq('user_id', userId)
+        .order('created_at', ascending: false)
+        .limit(3);
+
+    if (!mounted) return;
+    setState(() {
+      unreadCount = unread.length;
+      recentNotifications = List<Map<String, dynamic>>.from(recent);
+    });
+  }
+
+  Future<void> _loadUserGroups() async {
+    final userId = Supabase.instance.client.auth.currentUser?.id;
+    if (userId == null) return;
+
+    final response = await Supabase.instance.client
+        .from('group_members')
+        .select('group_id, groups(name)')
+        .eq('user_id', userId);
+
+    if (!mounted) return;
+
+    setState(() {
+      userGroups = response
+          .where((g) => g['groups'] != null)
+          .map(
+            (g) => {'groupId': g['group_id'], 'groupName': g['groups']['name']},
+          )
+          .toList();
+
+      selectedGroupId = userGroups.isNotEmpty
+          ? userGroups.first['groupId']
+          : null;
+    });
+  }
+
+  String _getGroupName(String groupId) {
+    final group = userGroups.firstWhere(
+      (g) => g['groupId'] == groupId,
+      orElse: () => {'groupName': 'Desconocido'},
+    );
+    return group['groupName'];
+  }
+
+  Future<double> _calculateUserTotal(String groupId) async {
+    final userId = Supabase.instance.client.auth.currentUser?.id;
+    if (userId == null || groupId.isEmpty) return 0.0;
+
+    final response = await Supabase.instance.client
+        .from('expenses')
+        .select('amount')
+        .eq('group_id', groupId)
+        .eq('user_id', userId);
+
+    final total = response.fold<double>(
+      0.0,
+      (sum, item) => sum + (item['amount'] as num).toDouble(),
+    );
+
+    return total;
+  }
+
+  Future<double> _calculateUserAverageAcrossGroups() async {
+    final userId = Supabase.instance.client.auth.currentUser?.id;
+    if (userId == null || userGroups.isEmpty) return 0.0;
+
+    double total = 0.0;
+
+    for (final group in userGroups) {
+      final groupId = group['groupId'];
+      final response = await Supabase.instance.client
+          .from('expenses')
+          .select('amount')
+          .eq('group_id', groupId)
+          .eq('user_id', userId);
+
+      final groupTotal = response.fold<double>(
+        0.0,
+        (sum, item) => sum + (item['amount'] as num).toDouble(),
+      );
+
+      total += groupTotal;
+    }
+
+    return total / userGroups.length;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (isLoading) {
+      return const Scaffold(body: Center(child: CircularProgressIndicator()));
+    }
+
+    return WillPopScope(
+      onWillPop: () async {
+        // Por ejemplo, mostrar un diálogo de confirmación
+        final shouldExit = await showDialog<bool>(
+          context: context,
+          builder: (context) => AlertDialog(
+            title: const Text('¿Salir de la aplicación?'),
+            content: const Text(
+              '¿Estás seguro que deseas cerrar esta pantalla?',
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.of(context).pop(false),
+                child: const Text('Cancelar'),
+              ),
+              TextButton(
+                onPressed: () => Navigator.of(context).pop(true),
+                child: const Text('Salir'),
+              ),
+            ],
+          ),
+        );
+        return shouldExit ?? false;
+      },
+      child: Scaffold(
+        appBar: AppBar(
+          title: const Text('Dashboard'),
+          backgroundColor: AppColors.card,
+          actions: [
+            Stack(
+              children: [
+                IconButton(
+                  icon: const Icon(Icons.notifications),
+                  tooltip: 'Notificaciones',
+                  onPressed: () {
+                    Navigator.pushNamed(context, '/notificaciones');
+                  },
+                ),
+                if (unreadCount > 0)
+                  Positioned(
+                    right: 6,
+                    top: 6,
+                    child: Container(
+                      padding: const EdgeInsets.all(4),
+                      decoration: const BoxDecoration(
+                        color: Colors.red,
+                        shape: BoxShape.circle,
+                      ),
+                      child: Text(
+                        '$unreadCount',
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 12,
+                        ),
+                      ),
+                    ),
+                  ),
+              ],
+            ),
+            IconButton(
+              icon: const Icon(Icons.logout, color: Colors.redAccent),
+              tooltip: 'Cerrar sesión',
+              onPressed: () async {
+                await Supabase.instance.client.auth.signOut();
+                if (!mounted) return;
+                Navigator.pushReplacementNamed(context, '/login');
+              },
+            ),
+          ],
+        ),
+        body: SafeArea(
+          child: RefreshIndicator(
+            onRefresh: () async {
+              await _loadUserData();
+              await _loadNotificationSummary();
+              await _loadUserGroups();
+            },
+            child: ListView(
+              physics: const AlwaysScrollableScrollPhysics(),
+              padding: const EdgeInsets.all(16.0),
+              children: [
+                _buildUserHeader(),
+                const SizedBox(height: 16),
+                _buildBalanceCard(),
+                const SizedBox(height: 16),
+
+                FutureBuilder<double>(
+                  future: _calculateGroupMemberAverageSum(),
+                  builder: (context, snapshot) {
+                    final value = snapshot.data ?? 0.0;
+                    return Card(
+                      color: AppColors.card,
+                      child: ListTile(
+                        title: const Text(
+                          'Suma de promedios por miembro en tus grupos',
+                          style: TextStyle(color: AppColors.textPrimary),
+                        ),
+                        subtitle: Text(
+                          'Bs. ${value.toStringAsFixed(2)}',
+                          style: const TextStyle(
+                            color: AppColors.textSecondary,
+                          ),
+                        ),
+                        trailing: const Icon(
+                          Icons.bar_chart,
+                          color: AppColors.primary,
+                        ),
+                      ),
+                    );
+                  },
+                ),
+
+                const SizedBox(height: 16),
+                _buildGroupList(),
+                const SizedBox(height: 16),
+                _buildRecentExpensesAcrossGroups(),
+                const SizedBox(height: 16),
+                if (role == 'admin' || role == 'super_admin')
+                  _buildAdminActions(),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildUserHeader() {
+    return Card(
+      color: AppColors.card,
+      child: ListTile(
+        leading: Icon(Icons.person, color: AppColors.primary),
+        title: Text(
+          'Bienvenido, $name',
+          style: TextStyle(color: AppColors.textPrimary),
+        ),
+        subtitle: Text(
+          'Rol: $role',
+          style: TextStyle(color: AppColors.textSecondary),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildGroupList() {
+    if (userGroups.isEmpty) {
+      return Card(
+        color: AppColors.card,
+        child: Padding(
+          padding: const EdgeInsets.all(16.0),
+          child: Column(
+            children: [
+              const Text(
+                'No estás en ningún grupo aún.',
+                style: TextStyle(color: AppColors.textSecondary),
+                textAlign: TextAlign.center,
+              ),
+              const SizedBox(height: 12),
+              ElevatedButton.icon(
+                icon: const Icon(Icons.group_add),
+                label: const Text('Unirme a un grupo'),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: AppColors.primary,
+                ),
+                onPressed: () {
+                  Navigator.pushNamed(context, '/invitaciones');
+                },
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Text(
+          'Grupos Agregados:',
+          style: TextStyle(
+            fontSize: 18,
+            fontWeight: FontWeight.bold,
+            color: AppColors.primary,
+          ),
+        ),
+        const SizedBox(height: 8),
+        ...userGroups.map(
+          (group) => Card(
+            color: AppColors.card,
+            child: ListTile(
+              leading: const Icon(Icons.group, color: AppColors.primary),
+              title: Text(group['groupName']),
+              onTap: () {
+                setState(() {
+                  selectedGroupId = group['groupId'];
+                });
+                Navigator.pushNamed(
+                  context,
+                  '/group_detail_page',
+                  arguments: {
+                    'groupId': group['groupId'],
+                    'groupName': group['groupName'],
+                  },
+                );
+              },
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildBalanceCard() {
+    return FutureBuilder<double>(
+      future: _calculateUserTotal(selectedGroupId ?? ''),
+      builder: (context, snapshot) {
+        final total = snapshot.data ?? 0.0;
+
+        return Card(
+          color: AppColors.card,
+          child: ListTile(
+            title: Text(
+              'Gasto total del usuario',
+              style: TextStyle(color: AppColors.textPrimary),
+            ),
+            subtitle: Text(
+              'Bs. ${total.toStringAsFixed(2)}',
+              style: TextStyle(color: AppColors.textSecondary),
+            ),
+            trailing: Icon(
+              Icons.account_balance_wallet,
+              color: AppColors.primary,
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _buildRecentExpenses(String groupId) {
+    final ScrollController _expenseScrollController = ScrollController();
+
+    return Card(
+      color: AppColors.card,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          ListTile(
+            title: Text(
+              'Gastos recientes',
+              style: TextStyle(color: AppColors.textPrimary),
+            ),
+            trailing: Icon(Icons.receipt_long, color: AppColors.primary),
+          ),
+          const Divider(color: Colors.grey),
+          SizedBox(
+            height: 250,
+            child: FutureBuilder<List<Map<String, dynamic>>>(
+              future: Supabase.instance.client
+                  .from('expenses')
+                  .select('title, amount, date, group_id, groups(name)')
+                  .eq('group_id', groupId)
+                  .order('date', ascending: false)
+                  .limit(10),
+              builder: (context, snapshot) {
+                if (snapshot.connectionState == ConnectionState.waiting) {
+                  return const Center(child: CircularProgressIndicator());
+                }
+                if (snapshot.hasError) {
+                  return const Center(
+                    child: Text(
+                      'No se pudieron cargar los gastos. Por favor, revisa tu conexión o intenta más tarde.',
+                      style: TextStyle(color: Colors.redAccent),
+                      textAlign: TextAlign.center,
+                    ),
+                  );
+                }
+                final data = snapshot.data;
+                if (data == null || data.isEmpty) {
+                  return const Center(
+                    child: Text('No hay gastos registrados.'),
+                  );
+                }
+
+                return Scrollbar(
+                  controller: _expenseScrollController,
+                  thumbVisibility: true,
+                  child: ListView.builder(
+                    controller: _expenseScrollController,
+                    itemCount: data.length,
+                    itemBuilder: (context, index) {
+                      final expense = data[index];
+                      final title = expense['title'] ?? 'Sin título';
+                      final amount = expense['amount'] ?? 0;
+                      final groupName =
+                          expense['groups']?['name'] ?? 'Grupo desconocido';
+
+                      return Padding(
+                        padding: const EdgeInsets.symmetric(
+                          vertical: 4.0,
+                          horizontal: 8.0,
+                        ),
+                        child: Card(
+                          elevation: 2,
+                          margin: const EdgeInsets.symmetric(
+                            vertical: 1,
+                            horizontal: 4,
+                          ),
+                          child: Padding(
+                            padding: const EdgeInsets.all(12.0),
+                            child: Row(
+                              children: [
+                                Expanded(
+                                  flex: 2,
+                                  child: Text(
+                                    title,
+                                    style: const TextStyle(
+                                      fontWeight: FontWeight.bold,
+                                    ),
+                                  ),
+                                ),
+                                Expanded(
+                                  flex: 3,
+                                  child: Column(
+                                    crossAxisAlignment: CrossAxisAlignment.end,
+                                    children: [
+                                      Text('Monto: Bs. $amount'),
+                                      Text('Grupo: $groupName'),
+                                    ],
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                      );
+                    },
+                  ),
+                );
+              },
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildRecentExpensesAcrossGroups() {
+    final ScrollController _expenseScrollController = ScrollController();
+
+    return Card(
+      color: AppColors.card,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          ListTile(
+            title: const Text(
+              'Gastos recientes',
+              style: TextStyle(color: AppColors.textPrimary),
+            ),
+            trailing: const Icon(Icons.receipt_long, color: AppColors.primary),
+          ),
+          const Divider(color: Colors.grey),
+          SizedBox(
+            height: 250,
+            child: FutureBuilder<List<Map<String, dynamic>>>(
+              future: _loadRecentExpensesAcrossGroups(),
+              builder: (context, snapshot) {
+                if (snapshot.connectionState == ConnectionState.waiting) {
+                  return const Center(child: CircularProgressIndicator());
+                }
+                if (snapshot.hasError) {
+                  return const Center(
+                    child: Text(
+                      'No se pudieron cargar los gastos.',
+                      style: TextStyle(color: Colors.redAccent),
+                    ),
+                  );
+                }
+                final data = snapshot.data;
+                if (data == null || data.isEmpty) {
+                  return const Center(
+                    child: Text('No hay gastos registrados.'),
+                  );
+                }
+
+                return Scrollbar(
+                  controller: _expenseScrollController,
+                  thumbVisibility: true,
+                  child: ListView.builder(
+                    controller: _expenseScrollController,
+                    itemCount: data.length,
+                    itemBuilder: (context, index) {
+                      final expense = data[index];
+                      final title = expense['title'] ?? 'Sin título';
+                      final amount = expense['amount'] ?? 0;
+                      final groupName =
+                          expense['groups']?['name'] ?? 'Grupo desconocido';
+
+                      return Padding(
+                        padding: const EdgeInsets.symmetric(
+                          vertical: 4.0,
+                          horizontal: 8.0,
+                        ),
+                        child: Card(
+                          elevation: 2,
+                          margin: const EdgeInsets.symmetric(
+                            vertical: 1,
+                            horizontal: 4,
+                          ),
+                          child: Padding(
+                            padding: const EdgeInsets.all(12.0),
+                            child: Row(
+                              children: [
+                                Expanded(
+                                  flex: 2,
+                                  child: Text(
+                                    title,
+                                    style: const TextStyle(
+                                      fontWeight: FontWeight.bold,
+                                    ),
+                                  ),
+                                ),
+                                Expanded(
+                                  flex: 3,
+                                  child: Column(
+                                    crossAxisAlignment: CrossAxisAlignment.end,
+                                    children: [
+                                      Text('Monto: Bs. $amount'),
+                                      Text('Grupo: $groupName'),
+                                    ],
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                      );
+                    },
+                  ),
+                );
+              },
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildAdminActions() {
+    return Center(
+      child: Wrap(
+        alignment: WrapAlignment.center,
+        spacing: 24,
+        runSpacing: 16,
+        children: [
+          Column(
+            children: [
+              IconButton(
+                icon: const Icon(Icons.group_add, size: 32),
+                tooltip: 'Crear grupo',
+                color: AppColors.primary,
+                onPressed: () {
+                  Navigator.pushNamed(context, '/crearGrupo');
+                },
+              ),
+              const Text('Crear grupo'),
+            ],
+          ),
+          Column(
+            children: [
+              IconButton(
+                icon: const Icon(Icons.edit, size: 32),
+                tooltip: 'Editar grupo',
+                color: AppColors.primary,
+                onPressed: userGroups.isEmpty
+                    ? null
+                    : () {
+                        showModalBottomSheet(
+                          context: context,
+                          isScrollControlled: true,
+                          shape: const RoundedRectangleBorder(
+                            borderRadius: BorderRadius.vertical(
+                              top: Radius.circular(24),
+                            ),
+                          ),
+                          builder: (BuildContext context) {
+                            return Padding(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 24,
+                                vertical: 32,
+                              ),
+                              child: Column(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  const Text(
+                                    'Selecciona un grupo para editar',
+                                    style: TextStyle(
+                                      fontSize: 20,
+                                      fontWeight: FontWeight.bold,
+                                      color: AppColors.primary,
+                                    ),
+                                    textAlign: TextAlign.center,
+                                  ),
+                                  const SizedBox(height: 24),
+                                  ...userGroups.map((group) {
+                                    return Card(
+                                      elevation: 3,
+                                      shape: RoundedRectangleBorder(
+                                        borderRadius: BorderRadius.circular(12),
+                                      ),
+                                      margin: const EdgeInsets.symmetric(
+                                        vertical: 8,
+                                      ),
+                                      child: ListTile(
+                                        leading: const Icon(
+                                          Icons.edit,
+                                          color: AppColors.primary,
+                                        ),
+                                        title: Text(group['groupName']),
+                                        trailing: const Icon(
+                                          Icons.arrow_forward_ios,
+                                          size: 16,
+                                        ),
+                                        onTap: () {
+                                          Navigator.pop(context);
+                                          Navigator.pushNamed(
+                                            context,
+                                            '/edit_group_page',
+                                            arguments: {
+                                              'groupId': group['groupId'],
+                                              'groupName': group['groupName'],
+                                            },
+                                          );
+                                        },
+                                      ),
+                                    );
+                                  }).toList(),
+                                ],
+                              ),
+                            );
+                          },
+                        );
+                      },
+              ),
+              const Text('Editar grupo'),
+            ],
+          ),
+          Column(
+            children: [
+              IconButton(
+                icon: const Icon(Icons.admin_panel_settings, size: 32),
+                tooltip: 'Gestionar roles',
+                color: AppColors.primary,
+                onPressed: () {
+                  Navigator.pushNamed(context, '/promote_user');
+                },
+              ),
+              const Text('Gestionar roles'),
+            ],
+          ),
+          Column(
+            children: [
+              IconButton(
+                icon: const Icon(Icons.account_balance, size: 32),
+                tooltip: 'Ver balances',
+                color: AppColors.primary,
+                onPressed: () {
+                  Navigator.pushNamed(context, '/balances');
+                },
+              ),
+              const Text('Ver balances'),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+}
