@@ -785,8 +785,7 @@ class _GroupDetailPageState extends State<GroupDetailPage>
                         ),
                         Row(
                           children: [
-                            Icon(
-                              getIconFromName(e['categories']?['icon']),
+                            Icon(getIconFromName(e['categories']?['icon']),
                               size: 18,
                               color: hexToColor(e['categories']?['color']),
                             ),
