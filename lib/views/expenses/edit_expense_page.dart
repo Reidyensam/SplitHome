@@ -104,7 +104,7 @@ class _EditExpensePageState extends State<EditExpensePage> {
         'updated_by': userId,
       };
 
-      updateData.remove('user_id'); // blindaje extra
+      updateData.remove('user_id');
 
       await Supabase.instance.client
           .from('expenses')
