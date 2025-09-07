@@ -28,7 +28,7 @@ class _EditExpensePageState extends State<EditExpensePage> {
   @override
   void initState() {
     super.initState();
-    _loadExpense().then((_) => _loadCategories());
+    _loadCategories().then((_) => _loadExpense());
   }
 
   Future<void> _loadExpense() async {
@@ -231,7 +231,7 @@ class _EditExpensePageState extends State<EditExpensePage> {
               categoryOptions.isEmpty
                   ? const CircularProgressIndicator()
                   : DropdownButtonFormField<String>(
-                      value: categoryId,
+                      value: categoryId, // 👈 Este valor viene precargado
                       decoration: const InputDecoration(labelText: 'Categoría'),
                       items: categoryOptions.map((cat) {
                         return DropdownMenuItem(
@@ -268,5 +268,3 @@ class _EditExpensePageState extends State<EditExpensePage> {
     );
   }
 }
-
-

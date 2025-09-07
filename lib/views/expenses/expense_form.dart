@@ -34,7 +34,16 @@ class _ExpenseFormState extends State<ExpenseForm> {
   }
 
   Future<void> _submitExpense() async {
+    print('📦 Categoría seleccionada: $selectedCategoryId');
+
     if (_formKey.currentState!.validate()) {
+      if (selectedCategoryId == null || selectedCategoryId!.isEmpty) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Selecciona una categoría')),
+        );
+        return;
+      }
+
       final userId = Supabase.instance.client.auth.currentUser?.id;
       final client = Supabase.instance.client;
 
