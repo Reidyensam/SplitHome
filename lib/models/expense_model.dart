@@ -35,7 +35,7 @@ class Expense {
     'userId': userId,
     'title': title,
     'amount': amount,
-    'date': date.toIso8601String(),
+    'date': date.toUtc().toIso8601String(),
     'sharedWith': sharedWith,
   };
 }

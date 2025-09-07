@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:intl/intl.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 class ExpenseList extends StatefulWidget {
@@ -25,6 +26,7 @@ class _ExpenseListState extends State<ExpenseList> {
         .select()
         .eq('group_id', widget.groupId)
         .order('date', ascending: false);
+
     setState(() {
       expenses = List<Map<String, dynamic>>.from(result);
       isLoading = false;
@@ -39,11 +41,16 @@ class _ExpenseListState extends State<ExpenseList> {
             itemCount: expenses.length,
             itemBuilder: (context, index) {
               final expense = expenses[index];
+              final utcDate = DateTime.parse(expense['date']);
+              final localDate = utcDate.toLocal();
+              final formattedDate =
+                  DateFormat('dd/MM/yyyy HH:mm').format(localDate);
+
               return Card(
                 child: ListTile(
                   title: Text(expense['title']),
                   subtitle: Text('Bs. ${expense['amount'].toStringAsFixed(2)}'),
-                  trailing: Text(expense['date'].toString().split(' ')[0]),
+                  trailing: Text(formattedDate),
                 ),
               );
             },
