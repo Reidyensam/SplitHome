@@ -344,17 +344,44 @@ class _GroupDetailPageState extends State<GroupDetailPage>
         title: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text('Total: Bs. ${total.toStringAsFixed(2)}'),
-            Text('Prom. por miembro: Bs. ${average.toStringAsFixed(2)}'),
+            Row(
+              children: [
+                const Icon(Icons.attach_money, color: Colors.green),
+                const SizedBox(width: 8),
+                Text(
+                  'Total: Bs. ${total.toStringAsFixed(2)}',
+                  style: const TextStyle(fontWeight: FontWeight.bold),
+                ),
+              ],
+            ),
+            const SizedBox(height: 4),
+            Row(
+              children: [
+                const Icon(Icons.group, color: Colors.blue),
+                const SizedBox(width: 8),
+                Flexible(
+                  child: Text(
+                    'Promedio: Bs. ${average.toStringAsFixed(2)}',
+                    style: const TextStyle(fontWeight: FontWeight.bold),
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+              ],
+            ),
           ],
         ),
-
         children: [
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
+                const Divider(height: 24),
+                const Text(
+                  '📌 Contribuciones individuales',
+                  style: TextStyle(fontWeight: FontWeight.bold),
+                ),
+                const SizedBox(height: 8),
                 Table(
                   columnWidths: const {
                     0: FlexColumnWidth(2),
@@ -401,71 +428,63 @@ class _GroupDetailPageState extends State<GroupDetailPage>
                   ],
                 ),
                 const SizedBox(height: 16),
-                if (highestSpender != null) ...[
-                  const Text(
-                    'Mayor gasto',
-                    style: TextStyle(fontWeight: FontWeight.bold),
-                  ),
-                  Table(
-                    columnWidths: const {
-                      0: FlexColumnWidth(2),
-                      1: FlexColumnWidth(1),
-                    },
+                Row(
+                  children: [
+                    const Icon(Icons.trending_up, color: Colors.orange),
+                    const SizedBox(width: 8),
+                    const Text(
+                      'Mayor gasto:',
+                      style: TextStyle(fontWeight: FontWeight.bold),
+                    ),
+                    const SizedBox(width: 8),
+                    if (highestSpender != null)
+                      Flexible(
+                        child: Text(
+                          '${highestSpender['name']} - Bs. ${highestSpender['amount'].toStringAsFixed(2)}',
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                  ],
+                ),
+                const SizedBox(height: 8),
+                Row(
+                  children: [
+                    const Icon(Icons.trending_down, color: Colors.redAccent),
+                    const SizedBox(width: 8),
+                    const Text(
+                      'Menor gasto:',
+                      style: TextStyle(fontWeight: FontWeight.bold),
+                    ),
+                    const SizedBox(width: 8),
+                    if (lowestSpenderData != null)
+                      Flexible(
+                        child: Text(
+                          '${lowestSpenderData['name']} - Bs. ${lowestSpenderData['amount'].toStringAsFixed(2)}',
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                  ],
+                ),
+                const SizedBox(height: 8),
+                if (noSpenders.isNotEmpty)
+                  Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      TableRow(
-                        children: [
-                          Padding(
-                            padding: const EdgeInsets.symmetric(vertical: 4),
-                            child: Text(highestSpender['name']),
-                          ),
-                          Padding(
-                            padding: const EdgeInsets.symmetric(vertical: 4),
-                            child: Text(
-                              highestSpender['amount'].toStringAsFixed(2),
-                            ),
-                          ),
-                        ],
+                      const Icon(Icons.block, color: Colors.grey),
+                      const SizedBox(width: 8),
+                      const Text(
+                        'Sin consumo:',
+                        style: TextStyle(fontWeight: FontWeight.bold),
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          noSpenders.map((m) => m['name']).join(', '),
+                          softWrap: true,
+                        ),
                       ),
                     ],
                   ),
-                ],
-                const SizedBox(height: 8),
-                if (lowestSpenderData != null) ...[
-                  const Text(
-                    'Menor gasto',
-                    style: TextStyle(fontWeight: FontWeight.bold),
-                  ),
-                  Table(
-                    columnWidths: const {
-                      0: FlexColumnWidth(2),
-                      1: FlexColumnWidth(1),
-                    },
-                    children: [
-                      TableRow(
-                        children: [
-                          Padding(
-                            padding: const EdgeInsets.symmetric(vertical: 4),
-                            child: Text(lowestSpenderData['name']),
-                          ),
-                          Padding(
-                            padding: const EdgeInsets.symmetric(vertical: 4),
-                            child: Text(
-                              lowestSpenderData['amount'].toStringAsFixed(2),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ],
-                  ),
-                ],
-                const SizedBox(height: 8),
-                if (noSpenders.isNotEmpty) ...[
-                  const Text(
-                    'Sin consumo',
-                    style: TextStyle(fontWeight: FontWeight.bold),
-                  ),
-                  ...noSpenders.map((m) => Text('- ${m['name']}')),
-                ],
               ],
             ),
           ),
@@ -847,7 +866,7 @@ class _GroupDetailPageState extends State<GroupDetailPage>
                               );
                             }
 
-                            _loadGroupDetails(); 
+                            _loadGroupDetails();
                           }
                         },
                       ),
