@@ -750,12 +750,105 @@ class _GroupDetailPageState extends State<GroupDetailPage>
                         leading: const Icon(Icons.delete),
                         title: const Text('Eliminar gasto'),
                         onTap: () async {
-                          Navigator.pop(context);
-                          await Supabase.instance.client
-                              .from('expenses')
-                              .delete()
-                              .eq('id', e['id']);
-                          _loadGroupDetails();
+                          final confirmed = await showDialog<bool>(
+                            context: context,
+                            builder: (dialogContext) => AlertDialog(
+                              title: const Text('¿Eliminar gasto?'),
+                              content: const Text(
+                                'Esta acción no se puede deshacer. ¿Estás seguro de que deseas eliminar este gasto?',
+                              ),
+                              actions: [
+                                TextButton(
+                                  onPressed: () =>
+                                      Navigator.pop(dialogContext, false),
+                                  child: const Text('Cancelar'),
+                                ),
+                                TextButton(
+                                  onPressed: () =>
+                                      Navigator.pop(dialogContext, true),
+                                  child: const Text('Eliminar'),
+                                ),
+                              ],
+                            ),
+                          );
+
+                          if (confirmed == true) {
+                            await Supabase.instance.client
+                                .from('expenses')
+                                .delete()
+                                .eq('id', e['id']);
+
+                            if (context.mounted) {
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                SnackBar(
+                                  content: Row(
+                                    children: [
+                                      const Icon(
+                                        Icons.check_circle,
+                                        color: Colors.white,
+                                      ),
+                                      const SizedBox(width: 12),
+                                      Expanded(
+                                        child: Text(
+                                          '✅ "${e['title']}" fue eliminado exitosamente',
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                  backgroundColor: Colors.green,
+                                  behavior: SnackBarBehavior.floating,
+                                  margin: const EdgeInsets.all(16),
+                                  duration: const Duration(seconds: 3),
+                                  shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(12),
+                                  ),
+                                ),
+                              );
+                            }
+
+                            _loadGroupDetails();
+                          }
+
+                          if (confirmed == true) {
+                            Navigator.pop(
+                              context,
+                            ); // Cierra el BottomSheet después de confirmar
+
+                            await Supabase.instance.client
+                                .from('expenses')
+                                .delete()
+                                .eq('id', e['id']);
+
+                            if (context.mounted) {
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                SnackBar(
+                                  content: Row(
+                                    children: const [
+                                      Icon(
+                                        Icons.check_circle,
+                                        color: Colors.white,
+                                      ),
+                                      SizedBox(width: 12),
+                                      Expanded(
+                                        child: Text(
+                                          'Gasto eliminado exitosamente',
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                  backgroundColor: Colors.green,
+                                  behavior: SnackBarBehavior.floating,
+                                  margin: const EdgeInsets.all(16),
+                                  duration: const Duration(seconds: 3),
+                                  shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(12),
+                                  ),
+                                ),
+                              );
+                            }
+
+                            _loadGroupDetails(); 
+                          }
                         },
                       ),
                     ],
@@ -785,7 +878,8 @@ class _GroupDetailPageState extends State<GroupDetailPage>
                         ),
                         Row(
                           children: [
-                            Icon(getIconFromName(e['categories']?['icon']),
+                            Icon(
+                              getIconFromName(e['categories']?['icon']),
                               size: 18,
                               color: hexToColor(e['categories']?['color']),
                             ),
