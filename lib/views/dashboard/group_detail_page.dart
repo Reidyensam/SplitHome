@@ -108,9 +108,12 @@ class _GroupDetailPageState extends State<GroupDetailPage>
 
       final expenseResponse = await client
           .from('expenses')
-          .select(
-            'id, title, amount, date, user_id, users!expenses_user_id_fkey(name), categories(name, icon, color)',
-          )
+          .select('''
+    id, title, amount, date, user_id,
+    users!expenses_user_id_fkey(name),
+    editor:updated_by(name),
+    categories(name, icon, color)
+    ''')
           .eq('group_id', widget.groupId)
           .order('date', ascending: false);
       print('📦 Miembros recibidos: $memberResponse');
@@ -583,6 +586,8 @@ class _GroupDetailPageState extends State<GroupDetailPage>
     final exportText = filteredExpenses
         .map((e) {
           final name = e['users']?['name'] ?? 'Sin nombre';
+          final editorName = e['editor']?['name'];
+          final wasEdited = editorName != null && editorName != name;
           final title = e['title'];
           final amount = e['amount'];
           final date = e['date'].toString().split(' ')[0];
@@ -723,6 +728,8 @@ class _GroupDetailPageState extends State<GroupDetailPage>
         ...filteredExpenses.map((e) {
           final amount = (e['amount'] as num).toDouble();
           final name = e['users']?['name'] ?? 'Sin nombre';
+          final editorName = e['editor']?['name'];
+          final wasEdited = editorName != null && editorName != name;
           final rawDate = DateTime.parse(e['date']);
           final hour = rawDate.hour % 12 == 0 ? 12 : rawDate.hour % 12;
           final period = rawDate.hour < 12 ? 'am' : 'pm';
@@ -921,14 +928,14 @@ class _GroupDetailPageState extends State<GroupDetailPage>
                         Text(
                           'Bs. ${amount.toStringAsFixed(2)}',
                           style: const TextStyle(
-                            fontSize: 13,
+                            fontSize: 14,
                             color: AppColors.textSecondary,
                           ),
                         ),
                         Text(
                           '$hour:${rawDate.minute.toString().padLeft(2, '0')} $period',
                           style: const TextStyle(
-                            fontSize: 13,
+                            fontSize: 14,
                             color: AppColors.textSecondary,
                           ),
                         ),
@@ -938,12 +945,33 @@ class _GroupDetailPageState extends State<GroupDetailPage>
                     Row(
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
-                        Text(
-                          name,
-                          style: const TextStyle(
-                            fontSize: 13,
-                            color: AppColors.textSecondary,
-                          ),
+                        Row(
+                          children: [
+                            Text(
+                              name,
+                              style: const TextStyle(
+                                fontSize: 13,
+                                color: AppColors.textSecondary,
+                              ),
+                            ),
+                            if (wasEdited) ...[
+                              const SizedBox(width: 6),
+                              const Icon(
+                                Icons.edit,
+                                size: 15,
+                                color: Colors.grey,
+                              ),
+                              const SizedBox(width: 4),
+                              Text(
+                                'Modificado por: $editorName',
+                                style: const TextStyle(
+                                  fontSize: 13,
+                                  fontStyle: FontStyle.italic,
+                                  color: Colors.grey,
+                                ),
+                              ),
+                            ],
+                          ],
                         ),
                         Text(
                           '${rawDate.day.toString().padLeft(2, '0')}-${rawDate.month.toString().padLeft(2, '0')}-${rawDate.year}',

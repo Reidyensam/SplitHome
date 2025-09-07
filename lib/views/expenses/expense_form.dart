@@ -62,10 +62,13 @@ class _ExpenseFormState extends State<ExpenseForm> {
         }
 
         if (widget.expense != null) {
+          data['updated_by'] = userId; 
+
           await client
               .from('expenses')
               .update(data)
               .eq('id', widget.expense!['id']);
+
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(content: Text('Gasto actualizado exitosamente')),
           );
