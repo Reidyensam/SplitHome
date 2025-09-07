@@ -54,8 +54,12 @@ class _ExpenseFormState extends State<ExpenseForm> {
           'date': selectedDate.toIso8601String(),
           'category_id': selectedCategoryId,
           'group_id': widget.groupId,
-          'user_id': userId,
         };
+
+        // Solo incluir el autor si es un gasto nuevo
+        if (widget.expense == null) {
+          data['user_id'] = userId;
+        }
 
         if (widget.expense != null) {
           await client
