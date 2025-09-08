@@ -87,21 +87,28 @@ class _DashboardPageState extends State<DashboardPage> {
     _loadUserGroups();
   }
 
-  Future<List<Map<String, dynamic>>> _loadRecentExpensesAcrossGroups() async {
-    final userId = Supabase.instance.client.auth.currentUser?.id;
-    if (userId == null || userGroups.isEmpty) return [];
+  Future<List<Map<String, dynamic>>> getRecentExpensesForUser() async {
+  final userId = Supabase.instance.client.auth.currentUser?.id;
+  if (userId == null) return [];
 
-    final groupIds = userGroups.map((g) => g['groupId']).toList();
+  final groupResponse = await Supabase.instance.client
+      .from('group_members')
+      .select('group_id')
+      .eq('user_id', userId);
 
-    final response = await Supabase.instance.client
-        .from('expenses')
-        .select('title, amount, date, group_id, groups(name)')
-        .filter('group_id', 'in', '(${groupIds.join(',')})')
-        .order('date', ascending: false)
-        .limit(10);
+final groupIds = groupResponse.map((g) => g['group_id'].toString()).toList();
 
-    return List<Map<String, dynamic>>.from(response);
-  }
+final orCondition = groupIds.map((id) => 'group_id.eq.$id').join(',');
+
+final expenses = await Supabase.instance.client
+    .from('expenses')
+    .select('title, amount, date, group_id, user_id, groups(name)')
+    .or(orCondition)
+    .order('date', ascending: false)
+    .limit(10);
+
+  return List<Map<String, dynamic>>.from(expenses);
+}
 
   Future<void> _loadUserData() async {
     final userId = Supabase.instance.client.auth.currentUser?.id;
@@ -488,13 +495,7 @@ class _DashboardPageState extends State<DashboardPage> {
           SizedBox(
             height: 400,
             child: FutureBuilder<List<Map<String, dynamic>>>(
-              future: Supabase.instance.client
-                  .from('expenses')
-                  .select(
-                    'title, amount, date, group_id, user_id, groups(name)',
-                  )
-                  .order('date', ascending: false)
-                  .limit(10),
+              future: getRecentExpensesForUser(),
               builder: (context, snapshot) {
                 if (snapshot.connectionState == ConnectionState.waiting) {
                   return const Center(child: CircularProgressIndicator());
@@ -558,7 +559,7 @@ class _DashboardPageState extends State<DashboardPage> {
                                       Text(
                                         title,
                                         style: const TextStyle(
-                                          fontSize: 16,
+                                          fontSize: 14.5,
                                           fontWeight: FontWeight.bold,
                                           color: Color.fromARGB(221, 236, 236, 236),
                                         ),
@@ -584,7 +585,7 @@ class _DashboardPageState extends State<DashboardPage> {
                                         style: TextStyle(
                                           fontSize: 15,
                                           fontWeight: FontWeight.bold,
-                                          color: const Color.fromARGB(255, 71, 145, 180), // solo el monto resaltado
+                                          color: const Color.fromARGB(255, 86, 171, 211), // solo el monto resaltado
                                         ),
                                       ),
                                       const SizedBox(height: 4),

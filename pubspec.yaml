@@ -13,6 +13,8 @@ dependencies:
   supabase_flutter: 2.9.1
   share_plus: ^11.1.0
   intl: ^0.18.1
+  local_auth: ^2.1.6
+
 
 
 
