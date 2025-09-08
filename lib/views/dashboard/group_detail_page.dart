@@ -68,11 +68,20 @@ class _GroupDetailPageState extends State<GroupDetailPage>
     );
     print('Cargando miembros para group_id=${widget.groupId}');
 
+    final currentUserId = Supabase.instance.client.auth.currentUser?.id;
+    if (currentUserId != null) {
+      await Supabase.instance.client.rpc(
+        'set_request_user',
+        params: {'user_id': currentUserId},
+      );
+    }
+
     try {
       final memberResponse = await client
           .from('group_members')
           .select('user_id, role')
           .eq('group_id', widget.groupId);
+
       final currentUserId = Supabase.instance.client.auth.currentUser?.id;
 
       String? roleInGroup;
@@ -605,6 +614,8 @@ class _GroupDetailPageState extends State<GroupDetailPage>
   }
 
   Widget _buildMemberList() {
+    final currentUserId = Supabase.instance.client.auth.currentUser?.id;
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -637,6 +648,11 @@ class _GroupDetailPageState extends State<GroupDetailPage>
             final name = user['name'] ?? 'Sin nombre';
             final email = user['email'] ?? 'Sin correo';
             final role = m['role'] ?? 'Sin rol';
+            final memberId = m['user_id'];
+
+            final isAdmin =
+                currentUserRole == 'admin' || currentUserRole == 'super_admin';
+            final isSelf = currentUserId != null && memberId == currentUserId;
 
             return Card(
               margin: const EdgeInsets.symmetric(vertical: 6),
@@ -647,7 +663,7 @@ class _GroupDetailPageState extends State<GroupDetailPage>
                 ),
                 child: Row(
                   children: [
-                    const Icon(Icons.person_outline, size: 20),
+                    const Icon(Icons.person_outline, size: 25),
                     const SizedBox(width: 10),
                     Expanded(
                       child: Column(
@@ -665,14 +681,14 @@ class _GroupDetailPageState extends State<GroupDetailPage>
                       ),
                     ),
                     IconButton(
-                      icon: const Icon(Icons.receipt_long, size: 18),
+                      icon: const Icon(Icons.receipt_long, size: 23),
                       tooltip: 'Ver gastos',
                       onPressed: () {
                         Navigator.push(
                           context,
                           MaterialPageRoute(
                             builder: (context) => UserExpensePage(
-                              userId: m['user_id'],
+                              userId: memberId,
                               userName: name,
                               groupId: widget.groupId,
                             ),
@@ -680,6 +696,112 @@ class _GroupDetailPageState extends State<GroupDetailPage>
                         );
                       },
                     ),
+                    if (isAdmin && !isSelf)
+                      IconButton(
+                        icon: const Icon(
+                          Icons.delete,
+                          size: 23,
+                          color: Colors.redAccent,
+                        ),
+                        tooltip: 'Eliminar miembro',
+                        onPressed: () async {
+                          final confirmed = await showDialog<bool>(
+                            context: context,
+                            builder: (dialogContext) => AlertDialog(
+                              title: const Text('¿Eliminar miembro?'),
+                              content: const Text(
+                                'Esta acción no se puede deshacer. ¿Estás seguro de que deseas eliminar este miembro?',
+                              ),
+                              actions: [
+                                TextButton(
+                                  onPressed: () =>
+                                      Navigator.pop(dialogContext, false),
+                                  child: const Text('Cancelar'),
+                                ),
+                                TextButton(
+                                  onPressed: () =>
+                                      Navigator.pop(dialogContext, true),
+                                  child: const Text('Eliminar'),
+                                ),
+                              ],
+                            ),
+                          );
+
+                          if (confirmed != true) return;
+
+                          final currentUserId =
+                              Supabase.instance.client.auth.currentUser?.id;
+                          final targetUserId = m['user_id']?.toString();
+                          final groupId = widget.groupId?.toString();
+
+                          if (groupId == null ||
+                              groupId.isEmpty ||
+                              targetUserId == null ||
+                              targetUserId.isEmpty) {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              const SnackBar(
+                                content: Text(
+                                  '⚠️ No se puede eliminar: datos inválidos.',
+                                ),
+                              ),
+                            );
+                            return;
+                          }
+
+                          print(
+                            '🧾 Eliminando user_id=$targetUserId del grupo=$groupId',
+                          );
+
+                          try {
+                            final response =
+                                await Supabase.instance.client
+                                        .from('group_members')
+                                        .delete()
+                                        .match({
+                                          'group_id': groupId,
+                                          'user_id': targetUserId,
+                                        })
+                                    as List?;
+
+                            final check = await Supabase.instance.client
+                                .from('group_members')
+                                .select()
+                                .eq('group_id', groupId)
+                                .eq('user_id', targetUserId);
+
+                            if (check.isEmpty) {
+                              // ✅ Eliminación confirmada
+                              setState(() {
+                                members.removeWhere(
+                                  (m) =>
+                                      m['user_id']?.toString() == targetUserId,
+                                );
+                              });
+
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                const SnackBar(
+                                  content: Text('✅ Miembro eliminado'),
+                                ),
+                              );
+                            } else {
+                              // ❌ Algo falló (no se eliminó)
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                const SnackBar(
+                                  content: Text(
+                                    '⚠️ No tienes permiso para eliminar este miembro.',
+                                  ),
+                                ),
+                              );
+                            }
+                          } catch (e) {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              SnackBar(
+                                content: Text('❌ Error al eliminar: $e'),
+                              ),
+                            );
+                          }
+                        },
+                      ),
                   ],
                 ),
               ),
@@ -799,6 +921,8 @@ class _GroupDetailPageState extends State<GroupDetailPage>
                           );
 
                           if (confirmed == true) {
+                            Navigator.pop(context); // Cierra el BottomSheet
+
                             await Supabase.instance.client
                                 .from('expenses')
                                 .delete()
@@ -832,48 +956,7 @@ class _GroupDetailPageState extends State<GroupDetailPage>
                               );
                             }
 
-                            _loadGroupDetails();
-                          }
-
-                          if (confirmed == true) {
-                            Navigator.pop(
-                              context,
-                            ); // Cierra el BottomSheet después de confirmar
-
-                            await Supabase.instance.client
-                                .from('expenses')
-                                .delete()
-                                .eq('id', e['id']);
-
-                            if (context.mounted) {
-                              ScaffoldMessenger.of(context).showSnackBar(
-                                SnackBar(
-                                  content: Row(
-                                    children: const [
-                                      Icon(
-                                        Icons.check_circle,
-                                        color: Colors.white,
-                                      ),
-                                      SizedBox(width: 12),
-                                      Expanded(
-                                        child: Text(
-                                          'Gasto eliminado exitosamente',
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                  backgroundColor: Colors.green,
-                                  behavior: SnackBarBehavior.floating,
-                                  margin: const EdgeInsets.all(16),
-                                  duration: const Duration(seconds: 3),
-                                  shape: RoundedRectangleBorder(
-                                    borderRadius: BorderRadius.circular(12),
-                                  ),
-                                ),
-                              );
-                            }
-
-                            _loadGroupDetails();
+                            _loadGroupDetails(); // refresca la lista
                           }
                         },
                       ),
