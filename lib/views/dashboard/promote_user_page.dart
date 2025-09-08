@@ -89,10 +89,10 @@ class _PromoteUserPageState extends State<PromoteUserPage> {
     }
 
     try {
-      await Supabase.instance.client
-          .from('users')
-          .update({'role': newRole})
-          .eq('id', userId);
+      await Supabase.instance.client.rpc(
+        'promote_user',
+        params: {'target_id': userId, 'new_role': newRole},
+      );
 
       ScaffoldMessenger.of(
         context,
@@ -113,7 +113,7 @@ class _PromoteUserPageState extends State<PromoteUserPage> {
     final email = user['email'] ?? 'Sin correo';
     final role = user['role'];
 
-    final validRoles = ['usuario', 'admin', 'super_admin'];
+    final validRoles = ['user', 'admin', 'super_admin'];
     final safeRole = validRoles.contains(role) ? role : null;
     final selectedRole = pendingRoleChanges[userId] ?? safeRole;
 

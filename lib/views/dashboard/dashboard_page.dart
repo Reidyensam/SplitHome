@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../core/constants.dart';
+import 'package:intl/intl.dart';
 
 class DashboardPage extends StatefulWidget {
   const DashboardPage({super.key});
@@ -468,114 +469,6 @@ class _DashboardPageState extends State<DashboardPage> {
     );
   }
 
-  Widget _buildRecentExpenses(String groupId) {
-    final ScrollController _expenseScrollController = ScrollController();
-
-    return Card(
-      color: AppColors.card,
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          ListTile(
-            title: Text(
-              'Gastos recientes',
-              style: TextStyle(color: AppColors.textPrimary),
-            ),
-            trailing: Icon(Icons.receipt_long, color: AppColors.primary),
-          ),
-          const Divider(color: Colors.grey),
-          SizedBox(
-            height: 250,
-            child: FutureBuilder<List<Map<String, dynamic>>>(
-              future: Supabase.instance.client
-                  .from('expenses')
-                  .select('title, amount, date, group_id, groups(name)')
-                  .eq('group_id', groupId)
-                  .order('date', ascending: false)
-                  .limit(10),
-              builder: (context, snapshot) {
-                if (snapshot.connectionState == ConnectionState.waiting) {
-                  return const Center(child: CircularProgressIndicator());
-                }
-                if (snapshot.hasError) {
-                  return const Center(
-                    child: Text(
-                      'No se pudieron cargar los gastos. Por favor, revisa tu conexión o intenta más tarde.',
-                      style: TextStyle(color: Colors.redAccent),
-                      textAlign: TextAlign.center,
-                    ),
-                  );
-                }
-                final data = snapshot.data;
-                if (data == null || data.isEmpty) {
-                  return const Center(
-                    child: Text('No hay gastos registrados.'),
-                  );
-                }
-
-                return Scrollbar(
-                  controller: _expenseScrollController,
-                  thumbVisibility: true,
-                  child: ListView.builder(
-                    controller: _expenseScrollController,
-                    itemCount: data.length,
-                    itemBuilder: (context, index) {
-                      final expense = data[index];
-                      final title = expense['title'] ?? 'Sin título';
-                      final amount = expense['amount'] ?? 0;
-                      final groupName =
-                          expense['groups']?['name'] ?? 'Grupo desconocido';
-
-                      return Padding(
-                        padding: const EdgeInsets.symmetric(
-                          vertical: 4.0,
-                          horizontal: 8.0,
-                        ),
-                        child: Card(
-                          elevation: 2,
-                          margin: const EdgeInsets.symmetric(
-                            vertical: 1,
-                            horizontal: 4,
-                          ),
-                          child: Padding(
-                            padding: const EdgeInsets.all(12.0),
-                            child: Row(
-                              children: [
-                                Expanded(
-                                  flex: 2,
-                                  child: Text(
-                                    title,
-                                    style: const TextStyle(
-                                      fontWeight: FontWeight.bold,
-                                    ),
-                                  ),
-                                ),
-                                Expanded(
-                                  flex: 3,
-                                  child: Column(
-                                    crossAxisAlignment: CrossAxisAlignment.end,
-                                    children: [
-                                      Text('Monto: Bs. $amount'),
-                                      Text('Grupo: $groupName'),
-                                    ],
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                        ),
-                      );
-                    },
-                  ),
-                );
-              },
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
   Widget _buildRecentExpensesAcrossGroups() {
     final ScrollController _expenseScrollController = ScrollController();
 
@@ -593,9 +486,15 @@ class _DashboardPageState extends State<DashboardPage> {
           ),
           const Divider(color: Colors.grey),
           SizedBox(
-            height: 250,
+            height: 400,
             child: FutureBuilder<List<Map<String, dynamic>>>(
-              future: _loadRecentExpensesAcrossGroups(),
+              future: Supabase.instance.client
+                  .from('expenses')
+                  .select(
+                    'title, amount, date, group_id, user_id, groups(name)',
+                  )
+                  .order('date', ascending: false)
+                  .limit(10),
               builder: (context, snapshot) {
                 if (snapshot.connectionState == ConnectionState.waiting) {
                   return const Center(child: CircularProgressIndicator());
@@ -627,6 +526,13 @@ class _DashboardPageState extends State<DashboardPage> {
                       final amount = expense['amount'] ?? 0;
                       final groupName =
                           expense['groups']?['name'] ?? 'Grupo desconocido';
+                      final createdAt = expense['date'];
+                      final formattedDate = createdAt != null
+                          ? DateFormat(
+                              'dd/MM/yyyy – HH:mm',
+                              
+                            ).format(DateTime.parse(createdAt))
+                          : 'Sin fecha';
 
                       return Padding(
                         padding: const EdgeInsets.symmetric(
@@ -644,21 +550,51 @@ class _DashboardPageState extends State<DashboardPage> {
                             child: Row(
                               children: [
                                 Expanded(
-                                  flex: 2,
-                                  child: Text(
-                                    title,
-                                    style: const TextStyle(
-                                      fontWeight: FontWeight.bold,
-                                    ),
+                                  flex: 1,
+                                  child: Column(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
+                                    children: [
+                                      Text(
+                                        title,
+                                        style: const TextStyle(
+                                          fontSize: 16,
+                                          fontWeight: FontWeight.bold,
+                                          color: Color.fromARGB(221, 236, 236, 236),
+                                        ),
+                                      ),
+                                      const SizedBox(height: 4),
+                                      Text(
+                                        formattedDate,
+                                        style: const TextStyle(
+                                          fontSize: 13,
+                                          color: Color.fromARGB(255, 194, 194, 194),
+                                        ),
+                                      ),
+                                    ],
                                   ),
                                 ),
                                 Expanded(
-                                  flex: 3,
+                                  flex: 1,
                                   child: Column(
                                     crossAxisAlignment: CrossAxisAlignment.end,
                                     children: [
-                                      Text('Monto: Bs. $amount'),
-                                      Text('Grupo: $groupName'),
+                                      Text(
+                                        'Bs. $amount',
+                                        style: TextStyle(
+                                          fontSize: 15,
+                                          fontWeight: FontWeight.bold,
+                                          color: const Color.fromARGB(255, 71, 145, 180), // solo el monto resaltado
+                                        ),
+                                      ),
+                                      const SizedBox(height: 4),
+                                      Text(
+                                        'Grupo: $groupName',
+                                        style: const TextStyle(
+                                          fontSize: 13,
+                                          color: Color.fromARGB(255, 233, 233, 233),
+                                        ),
+                                      ),
                                     ],
                                   ),
                                 ),
