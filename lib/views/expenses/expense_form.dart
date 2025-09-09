@@ -20,10 +20,28 @@ class _ExpenseFormState extends State<ExpenseForm> {
   String? selectedCategoryId;
   List<Map<String, dynamic>> categoryOptions = [];
 
+  final Map<String, IconData> iconMap = {
+    'school': Icons.school,
+    'restaurant': Icons.restaurant,
+    'directions_car': Icons.directions_car,
+    'sports_esports': Icons.sports_esports,
+    'local_hospital': Icons.local_hospital,
+    'category': Icons.category,
+    'services': Icons.miscellaneous_services,
+    // Agregá más según tus íconos en Supabase
+  };
+
+  Color hexToColor(String hex) {
+    final buffer = StringBuffer();
+    if (hex.length == 6 || hex.length == 7) buffer.write('ff');
+    buffer.write(hex.replaceFirst('#', ''));
+    return Color(int.parse(buffer.toString(), radix: 16));
+  }
+
   Future<void> _loadCategories() async {
     final response = await Supabase.instance.client
         .from('categories')
-        .select('id, name')
+        .select('id, name, icon, color')
         .order('name');
     setState(() {
       categoryOptions = List<Map<String, dynamic>>.from(response);
@@ -56,13 +74,12 @@ class _ExpenseFormState extends State<ExpenseForm> {
           'group_id': widget.groupId,
         };
 
-        // Solo incluir el autor si es un gasto nuevo
         if (widget.expense == null) {
           data['user_id'] = userId;
         }
 
         if (widget.expense != null) {
-          data['updated_by'] = userId; 
+          data['updated_by'] = userId;
 
           await client
               .from('expenses')
@@ -159,7 +176,19 @@ class _ExpenseFormState extends State<ExpenseForm> {
                 items: categoryOptions.map((cat) {
                   return DropdownMenuItem(
                     value: cat['id'].toString(),
-                    child: Text(cat['name']),
+                    child: Row(
+                      children: [
+                        Icon(
+                          iconMap[cat['icon']] ?? Icons.help_outline,
+                          size: 20,
+                          color: cat['color'] != null
+                              ? hexToColor(cat['color'])
+                              : null,
+                        ),
+                        const SizedBox(width: 8),
+                        Text(cat['name']),
+                      ],
+                    ),
                   );
                 }).toList(),
                 onChanged: (value) =>
@@ -168,6 +197,36 @@ class _ExpenseFormState extends State<ExpenseForm> {
                 validator: (value) =>
                     value == null ? 'Selecciona una categoría' : null,
               ),
+              if (selectedCategoryId != null)
+                Builder(
+                  builder: (context) {
+                    final selectedCat = categoryOptions.firstWhere(
+                      (cat) => cat['id'].toString() == selectedCategoryId,
+                      orElse: () => {},
+                    );
+                    if (selectedCat.isEmpty) return const SizedBox();
+                    return Padding(
+                      padding: const EdgeInsets.only(top: 8.0),
+                      child: Row(
+                        children: [
+                          Icon(
+                            iconMap[selectedCat['icon']] ??
+                                Icons.help_outline,
+                            color: selectedCat['color'] != null
+                                ? hexToColor(selectedCat['color'])
+                                : null,
+                          ),
+                          const SizedBox(width: 8),
+                          Text(
+                            selectedCat['name'],
+                            style:
+                                const TextStyle(fontWeight: FontWeight.bold),
+                          ),
+                        ],
+                      ),
+                    );
+                  },
+                ),
               const SizedBox(height: 32),
               ElevatedButton.icon(
                 icon: const Icon(Icons.save, color: AppColors.textPrimary),

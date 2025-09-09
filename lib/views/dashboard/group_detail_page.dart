@@ -921,42 +921,82 @@ class _GroupDetailPageState extends State<GroupDetailPage>
                           );
 
                           if (confirmed == true) {
-                            Navigator.pop(context); // Cierra el BottomSheet
+                            final expenseId = e['id'];
 
-                            await Supabase.instance.client
-                                .from('expenses')
-                                .delete()
-                                .eq('id', e['id']);
+                            final isValidUuid =
+                                expenseId is String &&
+                                expenseId.isNotEmpty &&
+                                RegExp(
+                                  r'^[0-9a-fA-F\-]{36}$',
+                                ).hasMatch(expenseId);
 
-                            if (context.mounted) {
-                              ScaffoldMessenger.of(context).showSnackBar(
-                                SnackBar(
-                                  content: Row(
-                                    children: [
-                                      const Icon(
-                                        Icons.check_circle,
-                                        color: Colors.white,
-                                      ),
-                                      const SizedBox(width: 12),
-                                      Expanded(
-                                        child: Text(
-                                          '✅ "${e['title']}" fue eliminado exitosamente',
-                                        ),
-                                      ),
-                                    ],
+                            if (!isValidUuid) {
+                              if (context.mounted) {
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  const SnackBar(
+                                    content: Text(
+                                      '❌ No se pudo eliminar: ID inválido',
+                                    ),
+                                    backgroundColor: Colors.red,
                                   ),
-                                  backgroundColor: Colors.green,
-                                  behavior: SnackBarBehavior.floating,
-                                  margin: const EdgeInsets.all(16),
-                                  duration: const Duration(seconds: 3),
-                                  shape: RoundedRectangleBorder(
-                                    borderRadius: BorderRadius.circular(12),
-                                  ),
-                                ),
-                              );
+                                );
+                              }
+                              return;
                             }
 
-                            _loadGroupDetails(); // refresca la lista
+                            try {
+                              await Supabase.instance.client
+                                  .from('expenses')
+                                  .delete()
+                                  .eq('id', expenseId);
+
+                              if (context.mounted) {
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  SnackBar(
+                                    content: Row(
+                                      children: [
+                                        const Icon(
+                                          Icons.check_circle,
+                                          color: Colors.white,
+                                        ),
+                                        const SizedBox(width: 12),
+                                        Expanded(
+                                          child: Text(
+                                            '✅ "${e['title']}" fue eliminado exitosamente',
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                    backgroundColor: const Color.fromARGB(255, 64, 148, 67),
+                                    behavior: SnackBarBehavior.floating,
+                                    margin: const EdgeInsets.all(16),
+                                    duration: const Duration(seconds: 3),
+                                    shape: RoundedRectangleBorder(
+                                      borderRadius: BorderRadius.circular(12),
+                                    ),
+                                  ),
+                                );
+                              }
+
+                              _loadGroupDetails(); // refresca la lista
+
+                              // Espera un momento antes de cerrar el BottomSheet
+                              await Future.delayed(
+                                const Duration(milliseconds: 300),
+                              );
+                              if (context.mounted) Navigator.pop(context);
+                            } catch (error) {
+                              if (context.mounted) {
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  SnackBar(
+                                    content: Text(
+                                      '❌ Error al eliminar: $error',
+                                    ),
+                                    backgroundColor: Colors.red,
+                                  ),
+                                );
+                              }
+                            }
                           }
                         },
                       ),
