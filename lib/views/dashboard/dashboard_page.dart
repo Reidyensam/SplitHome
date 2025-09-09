@@ -27,10 +27,10 @@ class _DashboardPageState extends State<DashboardPage> {
       final groupId = group['groupId'];
 
       // Obtener todos los gastos del grupo
-      final gastos = await Supabase.instance.client
-          .from('expenses')
-          .select('amount')
-          .eq('group_id', groupId);
+final gastos = await Supabase.instance.client
+    .from('expenses')
+    .select('id, title, amount, date, category_id, categories(name, icon, color)')
+    .eq('group_id', groupId);
 
       // Obtener todos los miembros del grupo
       final miembros = await Supabase.instance.client

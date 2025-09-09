@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
+import 'package:splithome/views/expenses/edit_expense_page.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+
 
 class ExpenseList extends StatefulWidget {
   final String groupId;
@@ -23,7 +25,7 @@ class _ExpenseListState extends State<ExpenseList> {
   Future<void> _loadExpenses() async {
     final result = await Supabase.instance.client
         .from('expenses')
-        .select()
+        .select('id, title, amount, date, category_id, categories(name, icon, color)')
         .eq('group_id', widget.groupId)
         .order('date', ascending: false);
 
@@ -43,14 +45,26 @@ class _ExpenseListState extends State<ExpenseList> {
               final expense = expenses[index];
               final utcDate = DateTime.parse(expense['date']);
               final localDate = utcDate.toLocal();
-              final formattedDate =
-                  DateFormat('dd/MM/yyyy HH:mm').format(localDate);
+              final formattedDate = DateFormat(
+                'dd/MM/yyyy HH:mm',
+              ).format(localDate);
 
               return Card(
                 child: ListTile(
                   title: Text(expense['title']),
                   subtitle: Text('Bs. ${expense['amount'].toStringAsFixed(2)}'),
                   trailing: Text(formattedDate),
+                  onTap: () {
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (_) => ExpenseForm(
+                          groupId: widget.groupId,
+                          expense: expense,
+                        ),
+                      ),
+                    );
+                  },
                 ),
               );
             },

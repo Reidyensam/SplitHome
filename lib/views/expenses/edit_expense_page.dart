@@ -1,252 +1,244 @@
 import 'package:flutter/material.dart';
+import 'package:splithome/core/constants.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
-import '../../core/constants.dart';
 
-class EditExpensePage extends StatefulWidget {
-  final String expenseId;
+class ExpenseForm extends StatefulWidget {
+  final String groupId;
+  final Map<String, dynamic>? expense;
 
-  const EditExpensePage({super.key, required this.expenseId});
+  const ExpenseForm({super.key, required this.groupId, this.expense});
 
   @override
-  State<EditExpensePage> createState() => _EditExpensePageState();
+  State<ExpenseForm> createState() => _ExpenseFormState();
 }
 
-class _EditExpensePageState extends State<EditExpensePage> {
+class _ExpenseFormState extends State<ExpenseForm> {
   final _formKey = GlobalKey<FormState>();
   String title = '';
   double amount = 0.0;
-  String? categoryId;
-  DateTime date = DateTime.now();
-  bool isOwnerOrAdmin = false;
-  bool isLoading = true;
+  DateTime selectedDate = DateTime.now();
+  String? selectedCategoryId;
   List<Map<String, dynamic>> categoryOptions = [];
-  bool isOwnExpense = false;
-  bool editedByAdmin = false;
-  String? creatorName;
-  String? editorName;
 
-  @override
-  void initState() {
-    super.initState();
-    _loadCategories().then((_) => _loadExpense());
-  }
+  final Map<String, IconData> iconMap = {
+    'school': Icons.school,
+    'restaurant': Icons.restaurant,
+    'directions_car': Icons.directions_car,
+    'sports_esports': Icons.sports_esports,
+    'local_hospital': Icons.local_hospital,
+    'category': Icons.category,
+    'services': Icons.miscellaneous_services,
+  };
 
-  Future<void> _loadExpense() async {
-    final userId = Supabase.instance.client.auth.currentUser?.id;
-    if (userId == null) return;
-
-    final expense = await Supabase.instance.client
-        .from('expenses')
-        .select('title, amount, category_id, date, user_id, group_id')
-        .eq('id', widget.expenseId)
-        .single();
-
-    final creatorId = expense['user_id'];
-
-    final groupAdmin = await Supabase.instance.client
-        .from('group_members')
-        .select('role')
-        .eq('group_id', expense['group_id'])
-        .eq('user_id', userId)
-        .single();
-
-    final isAdmin = groupAdmin['role'] == 'admin';
-
-    final creator = await Supabase.instance.client
-        .from('users')
-        .select('name')
-        .eq('id', creatorId)
-        .single();
-
-    final editor = await Supabase.instance.client
-        .from('users')
-        .select('name')
-        .eq('id', userId)
-        .single();
-
-    setState(() {
-      title = expense['title'];
-      amount = double.tryParse(expense['amount'].toString()) ?? 0.0;
-      categoryId = expense['category_id']?.toString();
-      date = DateTime.parse(expense['date']);
-      isOwnerOrAdmin = (creatorId == userId) || isAdmin;
-      isOwnExpense = creatorId == userId;
-      editedByAdmin = (creatorId != userId) && isAdmin;
-      creatorName = creator['name'];
-      editorName = editor['name'];
-      isLoading = false;
-    });
-    print('🧾 Autor: $creatorName');
-    print('🧾 Editor: $editorName');
-    print('🛡️ ¿Editado por admin?: $editedByAdmin');
+  Color hexToColor(String hex) {
+    final buffer = StringBuffer();
+    if (hex.length == 6 || hex.length == 7) buffer.write('ff');
+    buffer.write(hex.replaceFirst('#', ''));
+    return Color(int.parse(buffer.toString(), radix: 16));
   }
 
   Future<void> _loadCategories() async {
     final response = await Supabase.instance.client
         .from('categories')
-        .select('id, name')
+        .select('id, name, icon, color')
         .order('name');
 
+    final loadedCategories = List<Map<String, dynamic>>.from(response);
+
+    String? initialCategoryId;
+    if (widget.expense != null) {
+      initialCategoryId = widget.expense!['category_id']?.toString();
+    }
+
     setState(() {
-      categoryOptions = List<Map<String, dynamic>>.from(response);
+      categoryOptions = loadedCategories;
+      selectedCategoryId = initialCategoryId;
     });
+
+    debugPrint('🧠 Categoría seleccionada: $selectedCategoryId');
+    final exists = categoryOptions.any(
+      (cat) => cat['id'].toString() == selectedCategoryId,
+    );
+    debugPrint('¿Existe en opciones? ${exists ? "Sí" : "No"}');
   }
 
-  Future<void> _updateExpense() async {
+  Future<void> _submitExpense() async {
     if (_formKey.currentState!.validate()) {
+      if (selectedCategoryId == null || selectedCategoryId!.isEmpty) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Selecciona una categoría')),
+        );
+        return;
+      }
+
       final userId = Supabase.instance.client.auth.currentUser?.id;
+      final client = Supabase.instance.client;
 
-      final updateData = {
-        'title': title,
-        'amount': amount,
-        'category_id': categoryId,
-        'date': date.toIso8601String(),
-        'updated_by': userId,
-      };
+      if (userId != null) {
+        final data = {
+          'title': title,
+          'amount': amount,
+          'date': selectedDate.toIso8601String(),
+          'category_id': selectedCategoryId,
+          'group_id': widget.groupId,
+        };
 
-      updateData.remove('user_id');
+        if (widget.expense == null) {
+          data['user_id'] = userId;
+        } else {
+          data['updated_by'] = userId;
+        }
 
-      await Supabase.instance.client
-          .from('expenses')
-          .update(updateData)
-          .eq('id', widget.expenseId);
+        if (widget.expense != null) {
+          await client
+              .from('expenses')
+              .update(data)
+              .eq('id', widget.expense!['id']);
 
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: const Text('Gasto actualizado'),
-          backgroundColor: AppColors.success,
-        ),
-      );
-      Navigator.pop(context);
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Gasto actualizado exitosamente')),
+          );
+        } else {
+          await client.from('expenses').insert(data);
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Gasto registrado exitosamente')),
+          );
+        }
+
+        Navigator.pop(context, true);
+      }
+    }
+  }
+
+  Future<void> _pickDate() async {
+    final DateTime? picked = await showDatePicker(
+      context: context,
+      initialDate: selectedDate,
+      firstDate: DateTime(2023),
+      lastDate: DateTime(2030),
+    );
+    if (picked != null) {
+      setState(() => selectedDate = picked);
     }
   }
 
   @override
+  void initState() {
+    super.initState();
+    final expense = widget.expense;
+    if (expense != null) {
+      title = expense['title'] ?? '';
+      amount = (expense['amount'] as num).toDouble();
+      selectedDate = DateTime.parse(expense['date']);
+      selectedCategoryId = expense['category_id']?.toString();
+    }
+    _loadCategories();
+  }
+
+  @override
   Widget build(BuildContext context) {
-    if (isLoading) {
-      return const Scaffold(body: Center(child: CircularProgressIndicator()));
-    }
-
-    if (!isOwnerOrAdmin && !(editedByAdmin && title.isNotEmpty && amount > 0)) {
-      return Scaffold(
-        body: Center(
-          child: Text(
-            'No tienes permiso para editar este gasto',
-            style: const TextStyle(color: AppColors.error),
-            textAlign: TextAlign.center,
-          ),
-        ),
-      );
-    }
-
     return Scaffold(
       appBar: AppBar(
-        title: Row(
-          children: [
-            const Text('Editar gasto'),
-            if (editedByAdmin)
-              const Padding(
-                padding: EdgeInsets.only(left: 8.0),
-                child: Icon(Icons.shield, color: AppColors.primary),
-              ),
-          ],
+        title: Text(
+          widget.expense != null ? 'Editar gasto' : 'Registrar gasto',
         ),
-        backgroundColor: AppColors.primary,
       ),
       body: Padding(
         padding: const EdgeInsets.all(24.0),
         child: Form(
           key: _formKey,
           child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Padding(
-                padding: const EdgeInsets.only(bottom: 8.0),
-                child: Text.rich(
-                  TextSpan(
-                    children: [
-                      TextSpan(
-                        text: '$creatorName ',
-                        style: const TextStyle(fontStyle: FontStyle.italic),
-                      ),
-                      if (editedByAdmin)
-                        WidgetSpan(
-                          child: Icon(
-                            Icons.shield,
-                            color: AppColors.primary,
-                            size: 16,
-                          ),
-                          alignment: PlaceholderAlignment.middle,
-                        ),
-                      TextSpan(
-                        text: '  Modificado por: $editorName',
-                        style: const TextStyle(fontStyle: FontStyle.italic),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-              Padding(
-                padding: const EdgeInsets.only(bottom: 8.0),
-                child: Text.rich(
-                  TextSpan(
-                    children: [
-                      TextSpan(
-                        text: '$creatorName ',
-                        style: const TextStyle(fontStyle: FontStyle.italic),
-                      ),
-                      WidgetSpan(
-                        child: Icon(
-                          Icons.shield,
-                          color: AppColors.primary,
-                          size: 16,
-                        ),
-                        alignment: PlaceholderAlignment.middle,
-                      ),
-                      TextSpan(
-                        text: '  Modificado por: $editorName',
-                        style: const TextStyle(fontStyle: FontStyle.italic),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
               TextFormField(
                 initialValue: title,
-                decoration: const InputDecoration(labelText: 'Título'),
+                decoration: const InputDecoration(
+                  labelText: 'Título del gasto',
+                ),
                 validator: (value) =>
                     value!.isEmpty ? 'Ingresa un título' : null,
                 onChanged: (value) => title = value,
               ),
               const SizedBox(height: 16),
               TextFormField(
-                initialValue: amount.toString(),
-                decoration: const InputDecoration(labelText: 'Monto'),
+                initialValue: amount != 0.0 ? amount.toString() : '',
                 keyboardType: TextInputType.number,
+                decoration: const InputDecoration(labelText: 'Monto (Bs.)'),
                 validator: (value) =>
                     value!.isEmpty ? 'Ingresa un monto' : null,
-                onChanged: (value) => amount = double.tryParse(value) ?? amount,
+                onChanged: (value) => amount = double.tryParse(value) ?? 0.0,
               ),
               const SizedBox(height: 16),
-              categoryOptions.isEmpty
-                  ? const CircularProgressIndicator()
-                  : DropdownButtonFormField<String>(
-                      value: categoryId, // 👈 Este valor viene precargado
-                      decoration: const InputDecoration(labelText: 'Categoría'),
-                      items: categoryOptions.map((cat) {
-                        return DropdownMenuItem(
-                          value: cat['id'].toString(),
-                          child: Text(cat['name']),
-                        );
-                      }).toList(),
-                      onChanged: (value) => setState(() => categoryId = value),
-                      validator: (value) =>
-                          value == null ? 'Selecciona una categoría' : null,
-                    ),
+              Row(
+                children: [
+                  Text(
+                    'Fecha: ${selectedDate.toLocal().toString().split(' ')[0]}',
+                  ),
+                  const SizedBox(width: 16),
+                  ElevatedButton(
+                    onPressed: _pickDate,
+                    child: const Text('Cambiar fecha'),
+                  ),
+                ],
+              ),
               const SizedBox(height: 16),
+              DropdownButtonFormField<String>(
+                value: selectedCategoryId,
+                items: categoryOptions.map((cat) {
+                  return DropdownMenuItem(
+                    value: cat['id'].toString(),
+                    child: Row(
+                      children: [
+                        Icon(
+                          iconMap[cat['icon']] ?? Icons.help_outline,
+                          size: 20,
+                          color: cat['color'] != null
+                              ? hexToColor(cat['color'])
+                              : null,
+                        ),
+                        const SizedBox(width: 8),
+                        Text(cat['name']),
+                      ],
+                    ),
+                  );
+                }).toList(),
+                onChanged: (value) =>
+                    setState(() => selectedCategoryId = value),
+                decoration: const InputDecoration(labelText: 'Categoría'),
+                validator: (value) =>
+                    value == null ? 'Selecciona una categoría' : null,
+              ),
+              if (selectedCategoryId != null)
+                Builder(
+                  builder: (context) {
+                    final selectedCat = categoryOptions.firstWhere(
+                      (cat) => cat['id'].toString() == selectedCategoryId,
+                      orElse: () => {},
+                    );
+                    if (selectedCat.isEmpty) return const SizedBox();
+                    return Padding(
+                      padding: const EdgeInsets.only(top: 8.0),
+                      child: Row(
+                        children: [
+                          Icon(
+                            iconMap[selectedCat['icon']] ?? Icons.help_outline,
+                            color: selectedCat['color'] != null
+                                ? hexToColor(selectedCat['color'])
+                                : null,
+                          ),
+                          const SizedBox(width: 8),
+                          Text(
+                            selectedCat['name'],
+                            style: const TextStyle(fontWeight: FontWeight.bold),
+                          ),
+                        ],
+                      ),
+                    );
+                  },
+                ),
+              const SizedBox(height: 32),
               ElevatedButton.icon(
                 icon: const Icon(Icons.save, color: AppColors.textPrimary),
-                label: const Text('Guardar cambios'),
+                label: const Text('Guardar gasto'),
                 style: ElevatedButton.styleFrom(
                   backgroundColor: AppColors.primary,
                   foregroundColor: AppColors.textPrimary,
@@ -259,7 +251,7 @@ class _EditExpensePageState extends State<EditExpensePage> {
                     borderRadius: BorderRadius.circular(8),
                   ),
                 ),
-                onPressed: _updateExpense,
+                onPressed: _submitExpense,
               ),
             ],
           ),

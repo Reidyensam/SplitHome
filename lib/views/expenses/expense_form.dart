@@ -43,12 +43,25 @@ class _ExpenseFormState extends State<ExpenseForm> {
         .from('categories')
         .select('id, name, icon, color')
         .order('name');
+
+    final loadedCategories = List<Map<String, dynamic>>.from(response);
+
+    String? initialCategoryId;
+    if (widget.expense != null) {
+      initialCategoryId = widget.expense!['category_id']?.toString();
+    }
+
     setState(() {
-      categoryOptions = List<Map<String, dynamic>>.from(response);
-      if (widget.expense != null) {
-        selectedCategoryId = widget.expense!['category_id'];
-      }
+      categoryOptions = loadedCategories;
+      selectedCategoryId = initialCategoryId;
     });
+
+    // 🔍 Verificación de coincidencia
+    debugPrint('🧠 Categoría seleccionada: $selectedCategoryId');
+    final exists = categoryOptions.any(
+      (cat) => cat['id'].toString() == selectedCategoryId,
+    );
+    debugPrint('¿Existe en opciones? ${exists ? "Sí" : "No"}');
   }
 
   Future<void> _submitExpense() async {
@@ -210,8 +223,7 @@ class _ExpenseFormState extends State<ExpenseForm> {
                       child: Row(
                         children: [
                           Icon(
-                            iconMap[selectedCat['icon']] ??
-                                Icons.help_outline,
+                            iconMap[selectedCat['icon']] ?? Icons.help_outline,
                             color: selectedCat['color'] != null
                                 ? hexToColor(selectedCat['color'])
                                 : null,
@@ -219,8 +231,7 @@ class _ExpenseFormState extends State<ExpenseForm> {
                           const SizedBox(width: 8),
                           Text(
                             selectedCat['name'],
-                            style:
-                                const TextStyle(fontWeight: FontWeight.bold),
+                            style: const TextStyle(fontWeight: FontWeight.bold),
                           ),
                         ],
                       ),
