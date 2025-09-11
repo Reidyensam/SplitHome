@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:splithome/views/dashboard/widgets/dashboard_widget.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../core/constants.dart';
 import '../../services/auth_service.dart';
 
@@ -16,24 +17,39 @@ class _LoginPageState extends State<LoginPage> {
   String password = '';
 
   void _login() async {
-    if (_formKey.currentState!.validate()) {
-      final auth = AuthService();
-      final response = await auth.signIn(email, password);
+  if (_formKey.currentState!.validate()) {
+    final auth = AuthService();
+    final response = await auth.signIn(email, password);
 
-      if (!mounted) return;
+    if (!mounted) return;
 
-      if (response != null && response.session != null) {
-        Navigator.pushReplacementNamed(context, '/dashboard');
+    if (response != null && response.session != null) {
+      final user = Supabase.instance.client.auth.currentUser;
+      if (user == null) return;
+
+      final userData = await Supabase.instance.client
+          .from('users')
+          .select('role')
+          .eq('id', user.id)
+          .single();
+
+      final role = userData['role'];
+
+      if (role == 'super_admin') {
+        Navigator.pushReplacementNamed(context, '/super_admin_panel');
       } else {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: const Text('Credenciales inválidas o error de conexión'),
-            backgroundColor: AppColors.error,
-          ),
-        );
+        Navigator.pushReplacementNamed(context, '/dashboard');
       }
+    } else {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: const Text('Credenciales inválidas o error de conexión'),
+          backgroundColor: AppColors.error,
+        ),
+      );
     }
   }
+}
 
   @override
   Widget build(BuildContext context) {

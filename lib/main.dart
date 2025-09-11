@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:splithome/views/super_admin/super_admin_panel.dart';
 import 'package:splithome/views/groups/edit_group_page.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:splithome/core/constants.dart';
@@ -6,10 +7,11 @@ import 'package:splithome/views/login/login_page.dart';
 import 'package:splithome/views/login/register_page.dart';
 import 'package:splithome/views/dashboard/dashboard_page.dart';
 import 'package:splithome/views/dashboard/group_detail_page.dart';
-import 'package:splithome/views/dashboard/promote_user_page.dart';
+import 'package:splithome/views/super_admin/promote_user_page.dart';
 import 'package:splithome/views/groups/group_setup_page.dart';
 import 'package:splithome/views/notifications/notification_page.dart';
 import 'package:splithome/views/notifications/invitation_inbox_page.dart';
+
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -54,6 +56,7 @@ class SplitHomeApp extends StatelessWidget {
         '/register': (context) => const RegisterPage(),
         '/promote_user': (context) => const PromoteUserPage(),
         '/crearGrupo': (context) => const GroupSetupPage(),
+        '/super_admin_panel': (context) => const SuperAdminPanel(),
       },
       onGenerateRoute: (settings) {
         if (settings.name == '/group_detail_page') {

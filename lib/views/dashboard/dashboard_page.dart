@@ -21,6 +21,16 @@ class _DashboardPageState extends State<DashboardPage> {
   List<Map<String, dynamic>> recentNotifications = [];
   List<Map<String, dynamic>> userGroups = [];
   String? selectedGroupId;
+
+  bool groupWasCreatedByCurrentUser(String groupId) {
+    final userId = Supabase.instance.client.auth.currentUser?.id;
+    final group = userGroups.firstWhere(
+      (g) => g['groupId'] == groupId,
+      orElse: () => {},
+    );
+    return group['creator_id'] == userId;
+  }
+
   Future<double> _calculateGroupMemberAverageSum() async {
     double totalPromedios = 0.0;
 
@@ -166,7 +176,7 @@ class _DashboardPageState extends State<DashboardPage> {
 
     final response = await Supabase.instance.client
         .from('group_members')
-        .select('group_id, groups(name)')
+        .select('group_id, groups(name, created_by)')
         .eq('user_id', userId);
 
     if (!mounted) return;
@@ -175,7 +185,11 @@ class _DashboardPageState extends State<DashboardPage> {
       userGroups = response
           .where((g) => g['groups'] != null)
           .map(
-            (g) => {'groupId': g['group_id'], 'groupName': g['groups']['name']},
+            (g) => {
+              'groupId': g['group_id'],
+              'groupName': g['groups']['name'],
+              'creator_id': g['groups']['created_by'],
+            },
           )
           .toList();
 
@@ -306,7 +320,7 @@ class _DashboardPageState extends State<DashboardPage> {
                 const SizedBox(height: 16),
                 _buildRecentExpensesAcrossGroups(),
                 const SizedBox(height: 16),
-                if (role == 'admin' || role == 'super_admin')
+                if (role == 'admin')
                   _buildAdminActions(),
               ],
             ),
@@ -379,13 +393,14 @@ class _DashboardPageState extends State<DashboardPage> {
           ),
         ),
         const SizedBox(height: 8),
-        ...userGroups.map(
-          (group) => Card(
+        ...userGroups.map((group) {
+          final isCreator = groupWasCreatedByCurrentUser(group['groupId']);
+          return Card(
             color: AppColors.card,
             child: ListTile(
               leading: const Icon(Icons.group, color: AppColors.primary),
               title: Text(group['groupName']),
-              trailing: (role == 'admin' || role == 'super_admin')
+              trailing: isCreator
                   ? SizedBox(
                       width: 96,
                       child: Row(
@@ -418,14 +433,13 @@ class _DashboardPageState extends State<DashboardPage> {
                               final confirm = await showDialog<bool>(
                                 context: context,
                                 builder: (context) {
-                                  int secondsLeft = 8;
+                                  int secondsLeft = 7;
                                   bool enabled = false;
                                   late Timer timer;
 
                                   return StatefulBuilder(
                                     builder: (context, setState) {
-                                      // Iniciar el temporizador solo una vez
-                                      if (secondsLeft == 8) {
+                                      if (secondsLeft == 7) {
                                         timer = Timer.periodic(
                                           const Duration(seconds: 1),
                                           (t) {
@@ -509,6 +523,7 @@ class _DashboardPageState extends State<DashboardPage> {
                       ),
                     )
                   : null,
+
               onTap: () {
                 setState(() {
                   selectedGroupId = group['groupId'];
@@ -523,8 +538,8 @@ class _DashboardPageState extends State<DashboardPage> {
                 );
               },
             ),
-          ),
-        ),
+          );
+        }),
       ],
     );
   }
@@ -708,19 +723,6 @@ class _DashboardPageState extends State<DashboardPage> {
             ],
           ),
 
-          Column(
-            children: [
-              IconButton(
-                icon: const Icon(Icons.admin_panel_settings, size: 32),
-                tooltip: 'Gestionar roles',
-                color: AppColors.primary,
-                onPressed: () {
-                  Navigator.pushNamed(context, '/promote_user');
-                },
-              ),
-              const Text('Gestionar roles'),
-            ],
-          ),
           Column(
             children: [
               IconButton(
