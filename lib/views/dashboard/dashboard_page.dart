@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../core/constants.dart';
 import 'package:intl/intl.dart';
+import 'dart:async';
 
 class DashboardPage extends StatefulWidget {
   const DashboardPage({super.key});
@@ -27,10 +28,12 @@ class _DashboardPageState extends State<DashboardPage> {
       final groupId = group['groupId'];
 
       // Obtener todos los gastos del grupo
-final gastos = await Supabase.instance.client
-    .from('expenses')
-    .select('id, title, amount, date, category_id, categories(name, icon, color)')
-    .eq('group_id', groupId);
+      final gastos = await Supabase.instance.client
+          .from('expenses')
+          .select(
+            'id, title, amount, date, category_id, categories(name, icon, color)',
+          )
+          .eq('group_id', groupId);
 
       // Obtener todos los miembros del grupo
       final miembros = await Supabase.instance.client
@@ -88,27 +91,29 @@ final gastos = await Supabase.instance.client
   }
 
   Future<List<Map<String, dynamic>>> getRecentExpensesForUser() async {
-  final userId = Supabase.instance.client.auth.currentUser?.id;
-  if (userId == null) return [];
+    final userId = Supabase.instance.client.auth.currentUser?.id;
+    if (userId == null) return [];
 
-  final groupResponse = await Supabase.instance.client
-      .from('group_members')
-      .select('group_id')
-      .eq('user_id', userId);
+    final groupResponse = await Supabase.instance.client
+        .from('group_members')
+        .select('group_id')
+        .eq('user_id', userId);
 
-final groupIds = groupResponse.map((g) => g['group_id'].toString()).toList();
+    final groupIds = groupResponse
+        .map((g) => g['group_id'].toString())
+        .toList();
 
-final orCondition = groupIds.map((id) => 'group_id.eq.$id').join(',');
+    final orCondition = groupIds.map((id) => 'group_id.eq.$id').join(',');
 
-final expenses = await Supabase.instance.client
-    .from('expenses')
-    .select('title, amount, date, group_id, user_id, groups(name)')
-    .or(orCondition)
-    .order('date', ascending: false)
-    .limit(10);
+    final expenses = await Supabase.instance.client
+        .from('expenses')
+        .select('title, amount, date, group_id, user_id, groups(name)')
+        .or(orCondition)
+        .order('date', ascending: false)
+        .limit(10);
 
-  return List<Map<String, dynamic>>.from(expenses);
-}
+    return List<Map<String, dynamic>>.from(expenses);
+  }
 
   Future<void> _loadUserData() async {
     final userId = Supabase.instance.client.auth.currentUser?.id;
@@ -180,90 +185,43 @@ final expenses = await Supabase.instance.client
     });
   }
 
-  String _getGroupName(String groupId) {
-    final group = userGroups.firstWhere(
-      (g) => g['groupId'] == groupId,
-      orElse: () => {'groupName': 'Desconocido'},
-    );
-    return group['groupName'];
-  }
-
-  Future<double> _calculateUserTotal(String groupId) async {
-    final userId = Supabase.instance.client.auth.currentUser?.id;
-    if (userId == null || groupId.isEmpty) return 0.0;
-
-    final response = await Supabase.instance.client
-        .from('expenses')
-        .select('amount')
-        .eq('group_id', groupId)
-        .eq('user_id', userId);
-
-    final total = response.fold<double>(
-      0.0,
-      (sum, item) => sum + (item['amount'] as num).toDouble(),
-    );
-
-    return total;
-  }
-
-  Future<double> _calculateUserAverageAcrossGroups() async {
-    final userId = Supabase.instance.client.auth.currentUser?.id;
-    if (userId == null || userGroups.isEmpty) return 0.0;
-
-    double total = 0.0;
-
-    for (final group in userGroups) {
-      final groupId = group['groupId'];
-      final response = await Supabase.instance.client
-          .from('expenses')
-          .select('amount')
-          .eq('group_id', groupId)
-          .eq('user_id', userId);
-
-      final groupTotal = response.fold<double>(
-        0.0,
-        (sum, item) => sum + (item['amount'] as num).toDouble(),
-      );
-
-      total += groupTotal;
-    }
-
-    return total / userGroups.length;
-  }
-
   @override
   Widget build(BuildContext context) {
     if (isLoading) {
       return const Scaffold(body: Center(child: CircularProgressIndicator()));
     }
 
-    return WillPopScope(
-      onWillPop: () async {
-        // Por ejemplo, mostrar un diálogo de confirmación
-        final shouldExit = await showDialog<bool>(
-          context: context,
-          builder: (context) => AlertDialog(
-            title: const Text('¿Salir de la aplicación?'),
-            content: const Text(
-              '¿Estás seguro que deseas cerrar esta pantalla?',
+    return PopScope(
+      canPop: true,
+      onPopInvoked: (didPop) async {
+        if (!didPop) {
+          final shouldExit = await showDialog<bool>(
+            context: context,
+            builder: (context) => AlertDialog(
+              title: const Text('¿Salir de la aplicación?'),
+              content: const Text(
+                '¿Estás seguro que deseas cerrar esta pantalla?',
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.of(context).pop(false),
+                  child: const Text('Cancelar'),
+                ),
+                TextButton(
+                  onPressed: () => Navigator.of(context).pop(true),
+                  child: const Text('Salir'),
+                ),
+              ],
             ),
-            actions: [
-              TextButton(
-                onPressed: () => Navigator.of(context).pop(false),
-                child: const Text('Cancelar'),
-              ),
-              TextButton(
-                onPressed: () => Navigator.of(context).pop(true),
-                child: const Text('Salir'),
-              ),
-            ],
-          ),
-        );
-        return shouldExit ?? false;
+          );
+          if (shouldExit ?? false) {
+            Navigator.of(context).pop();
+          }
+        }
       },
       child: Scaffold(
         appBar: AppBar(
-          title: const Text('Dashboard'),
+          title: _buildUserHeader(),
           backgroundColor: AppColors.card,
           actions: [
             Stack(
@@ -318,11 +276,6 @@ final expenses = await Supabase.instance.client
               physics: const AlwaysScrollableScrollPhysics(),
               padding: const EdgeInsets.all(16.0),
               children: [
-                _buildUserHeader(),
-                const SizedBox(height: 16),
-                _buildBalanceCard(),
-                const SizedBox(height: 16),
-
                 FutureBuilder<double>(
                   future: _calculateGroupMemberAverageSum(),
                   builder: (context, snapshot) {
@@ -348,7 +301,6 @@ final expenses = await Supabase.instance.client
                     );
                   },
                 ),
-
                 const SizedBox(height: 16),
                 _buildGroupList(),
                 const SizedBox(height: 16),
@@ -368,14 +320,18 @@ final expenses = await Supabase.instance.client
     return Card(
       color: AppColors.card,
       child: ListTile(
-        leading: Icon(Icons.person, color: AppColors.primary),
+        leading: const Icon(Icons.person, color: AppColors.primary),
         title: Text(
-          'Bienvenido, $name',
-          style: TextStyle(color: AppColors.textPrimary),
+          'Hola, $name',
+          style: const TextStyle(
+            fontSize: 18,
+            fontWeight: FontWeight.bold,
+            color: AppColors.textPrimary,
+          ),
         ),
         subtitle: Text(
           'Rol: $role',
-          style: TextStyle(color: AppColors.textSecondary),
+          style: const TextStyle(fontSize: 14, color: AppColors.textSecondary),
         ),
       ),
     );
@@ -429,6 +385,130 @@ final expenses = await Supabase.instance.client
             child: ListTile(
               leading: const Icon(Icons.group, color: AppColors.primary),
               title: Text(group['groupName']),
+              trailing: (role == 'admin' || role == 'super_admin')
+                  ? SizedBox(
+                      width: 96,
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.end,
+                        children: [
+                          IconButton(
+                            icon: const Icon(
+                              Icons.edit,
+                              color: AppColors.primary,
+                            ),
+                            tooltip: 'Editar grupo',
+                            onPressed: () {
+                              Navigator.pushNamed(
+                                context,
+                                '/edit_group_page',
+                                arguments: {
+                                  'groupId': group['groupId'],
+                                  'groupName': group['groupName'],
+                                },
+                              );
+                            },
+                          ),
+                          IconButton(
+                            icon: const Icon(
+                              Icons.delete,
+                              color: Colors.redAccent,
+                            ),
+                            tooltip: 'Eliminar grupo',
+                            onPressed: () async {
+                              final confirm = await showDialog<bool>(
+                                context: context,
+                                builder: (context) {
+                                  int secondsLeft = 8;
+                                  bool enabled = false;
+                                  late Timer timer;
+
+                                  return StatefulBuilder(
+                                    builder: (context, setState) {
+                                      // Iniciar el temporizador solo una vez
+                                      if (secondsLeft == 8) {
+                                        timer = Timer.periodic(
+                                          const Duration(seconds: 1),
+                                          (t) {
+                                            if (secondsLeft > 1) {
+                                              setState(() => secondsLeft--);
+                                            } else {
+                                              t.cancel();
+                                              setState(() {
+                                                secondsLeft = 0;
+                                                enabled = true;
+                                              });
+                                            }
+                                          },
+                                        );
+                                      }
+
+                                      return AlertDialog(
+                                        title: const Text('¿Eliminar grupo?'),
+                                        content: Column(
+                                          mainAxisSize: MainAxisSize.min,
+                                          children: const [
+                                            Text(
+                                              'Esta acción no se puede deshacer.',
+                                            ),
+                                            SizedBox(height: 12),
+                                            Text(
+                                              'El botón eliminar se habilitará en 7 segundos...',
+                                            ),
+                                          ],
+                                        ),
+                                        actions: [
+                                          TextButton(
+                                            onPressed: () {
+                                              timer.cancel();
+                                              Navigator.pop(context, false);
+                                            },
+                                            child: const Text('Cancelar'),
+                                          ),
+                                          ElevatedButton(
+                                            onPressed: enabled
+                                                ? () {
+                                                    timer.cancel();
+                                                    Navigator.pop(
+                                                      context,
+                                                      true,
+                                                    );
+                                                  }
+                                                : null,
+                                            style: ElevatedButton.styleFrom(
+                                              backgroundColor: Colors.redAccent,
+                                            ),
+                                            child: Text(
+                                              enabled
+                                                  ? 'Eliminar definitivamente'
+                                                  : 'Eliminar (${secondsLeft})',
+                                            ),
+                                          ),
+                                        ],
+                                      );
+                                    },
+                                  );
+                                },
+                              );
+
+                              if (confirm == true) {
+                                await Supabase.instance.client
+                                    .from('group_members')
+                                    .delete()
+                                    .eq('group_id', group['groupId']);
+
+                                await Supabase.instance.client
+                                    .from('groups')
+                                    .delete()
+                                    .eq('id', group['groupId']);
+
+                                await _loadUserGroups();
+                              }
+                            },
+                          ),
+                        ],
+                      ),
+                    )
+                  : null,
               onTap: () {
                 setState(() {
                   selectedGroupId = group['groupId'];
@@ -446,33 +526,6 @@ final expenses = await Supabase.instance.client
           ),
         ),
       ],
-    );
-  }
-
-  Widget _buildBalanceCard() {
-    return FutureBuilder<double>(
-      future: _calculateUserTotal(selectedGroupId ?? ''),
-      builder: (context, snapshot) {
-        final total = snapshot.data ?? 0.0;
-
-        return Card(
-          color: AppColors.card,
-          child: ListTile(
-            title: Text(
-              'Gasto total del usuario',
-              style: TextStyle(color: AppColors.textPrimary),
-            ),
-            subtitle: Text(
-              'Bs. ${total.toStringAsFixed(2)}',
-              style: TextStyle(color: AppColors.textSecondary),
-            ),
-            trailing: Icon(
-              Icons.account_balance_wallet,
-              color: AppColors.primary,
-            ),
-          ),
-        );
-      },
     );
   }
 
@@ -531,7 +584,6 @@ final expenses = await Supabase.instance.client
                       final formattedDate = createdAt != null
                           ? DateFormat(
                               'dd/MM/yyyy – HH:mm',
-                              
                             ).format(DateTime.parse(createdAt))
                           : 'Sin fecha';
 
@@ -561,7 +613,12 @@ final expenses = await Supabase.instance.client
                                         style: const TextStyle(
                                           fontSize: 14.5,
                                           fontWeight: FontWeight.bold,
-                                          color: Color.fromARGB(221, 236, 236, 236),
+                                          color: Color.fromARGB(
+                                            221,
+                                            236,
+                                            236,
+                                            236,
+                                          ),
                                         ),
                                       ),
                                       const SizedBox(height: 4),
@@ -569,7 +626,12 @@ final expenses = await Supabase.instance.client
                                         formattedDate,
                                         style: const TextStyle(
                                           fontSize: 13,
-                                          color: Color.fromARGB(255, 194, 194, 194),
+                                          color: Color.fromARGB(
+                                            255,
+                                            194,
+                                            194,
+                                            194,
+                                          ),
                                         ),
                                       ),
                                     ],
@@ -585,7 +647,12 @@ final expenses = await Supabase.instance.client
                                         style: TextStyle(
                                           fontSize: 15,
                                           fontWeight: FontWeight.bold,
-                                          color: const Color.fromARGB(255, 86, 171, 211), // solo el monto resaltado
+                                          color: const Color.fromARGB(
+                                            255,
+                                            86,
+                                            171,
+                                            211,
+                                          ), // solo el monto resaltado
                                         ),
                                       ),
                                       const SizedBox(height: 4),
@@ -593,7 +660,12 @@ final expenses = await Supabase.instance.client
                                         'Grupo: $groupName',
                                         style: const TextStyle(
                                           fontSize: 13,
-                                          color: Color.fromARGB(255, 233, 233, 233),
+                                          color: Color.fromARGB(
+                                            255,
+                                            233,
+                                            233,
+                                            233,
+                                          ),
                                         ),
                                       ),
                                     ],
@@ -635,85 +707,7 @@ final expenses = await Supabase.instance.client
               const Text('Crear grupo'),
             ],
           ),
-          Column(
-            children: [
-              IconButton(
-                icon: const Icon(Icons.edit, size: 32),
-                tooltip: 'Editar grupo',
-                color: AppColors.primary,
-                onPressed: userGroups.isEmpty
-                    ? null
-                    : () {
-                        showModalBottomSheet(
-                          context: context,
-                          isScrollControlled: true,
-                          shape: const RoundedRectangleBorder(
-                            borderRadius: BorderRadius.vertical(
-                              top: Radius.circular(24),
-                            ),
-                          ),
-                          builder: (BuildContext context) {
-                            return Padding(
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 24,
-                                vertical: 32,
-                              ),
-                              child: Column(
-                                mainAxisSize: MainAxisSize.min,
-                                children: [
-                                  const Text(
-                                    'Selecciona un grupo para editar',
-                                    style: TextStyle(
-                                      fontSize: 20,
-                                      fontWeight: FontWeight.bold,
-                                      color: AppColors.primary,
-                                    ),
-                                    textAlign: TextAlign.center,
-                                  ),
-                                  const SizedBox(height: 24),
-                                  ...userGroups.map((group) {
-                                    return Card(
-                                      elevation: 3,
-                                      shape: RoundedRectangleBorder(
-                                        borderRadius: BorderRadius.circular(12),
-                                      ),
-                                      margin: const EdgeInsets.symmetric(
-                                        vertical: 8,
-                                      ),
-                                      child: ListTile(
-                                        leading: const Icon(
-                                          Icons.edit,
-                                          color: AppColors.primary,
-                                        ),
-                                        title: Text(group['groupName']),
-                                        trailing: const Icon(
-                                          Icons.arrow_forward_ios,
-                                          size: 16,
-                                        ),
-                                        onTap: () {
-                                          Navigator.pop(context);
-                                          Navigator.pushNamed(
-                                            context,
-                                            '/edit_group_page',
-                                            arguments: {
-                                              'groupId': group['groupId'],
-                                              'groupName': group['groupName'],
-                                            },
-                                          );
-                                        },
-                                      ),
-                                    );
-                                  }).toList(),
-                                ],
-                              ),
-                            );
-                          },
-                        );
-                      },
-              ),
-              const Text('Editar grupo'),
-            ],
-          ),
+
           Column(
             children: [
               IconButton(

@@ -93,16 +93,24 @@ class _EditGroupPageState extends State<EditGroupPage> {
   }
 
   Future<void> _updateGroup() async {
-    await Supabase.instance.client
+    final response = await Supabase.instance.client
         .from('groups')
         .update({'name': groupName, 'type': groupType})
-        .eq('id', widget.groupId);
+        .eq('id', widget.groupId)
+        .select();
 
     if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('Grupo actualizado correctamente')),
-    );
-    Navigator.pop(context);
+
+    if (response.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('No se pudo actualizar el grupo')),
+      );
+    } else {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Grupo actualizado correctamente')),
+      );
+      Navigator.pop(context);
+    }
   }
 
   @override
@@ -153,8 +161,7 @@ class _EditGroupPageState extends State<EditGroupPage> {
                 label: const Text('Guardar cambios'),
                 style: ElevatedButton.styleFrom(
                   backgroundColor: AppColors.primary,
-                  foregroundColor:
-                      AppColors.textPrimary,
+                  foregroundColor: AppColors.textPrimary,
                 ),
                 onPressed: () {
                   if (_formKey.currentState!.validate()) {
