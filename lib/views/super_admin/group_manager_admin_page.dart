@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
-import 'package:splithome/views/dashboard/group_detail_page.dart';
+import 'package:splithome/views/groups/group_detail_page.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../core/constants.dart';
 import 'create_group_page.dart';

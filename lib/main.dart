@@ -6,7 +6,7 @@ import 'package:splithome/core/constants.dart';
 import 'package:splithome/views/login/login_page.dart';
 import 'package:splithome/views/login/register_page.dart';
 import 'package:splithome/views/dashboard/dashboard_page.dart';
-import 'package:splithome/views/dashboard/group_detail_page.dart';
+import 'package:splithome/views/groups/group_detail_page.dart';
 import 'package:splithome/views/super_admin/promote_user_page.dart';
 import 'package:splithome/views/groups/group_setup_page.dart';
 import 'package:splithome/views/notifications/notification_page.dart';
