@@ -36,9 +36,50 @@ class _GroupDetailPageState extends State<GroupDetailPage>
   final TextEditingController emailController = TextEditingController();
   String selectedRole = 'user';
   String? currentUserRole;
+  String selectedMonth = '';
+
+  final List<String> meses = [
+    'Todos',
+    'Enero',
+    'Febrero',
+    'Marzo',
+    'Abril',
+    'Mayo',
+    'Junio',
+    'Julio',
+    'Agosto',
+    'Septiembre',
+    'Octubre',
+    'Noviembre',
+    'Diciembre',
+  ];
+
+  List<Map<String, dynamic>> get filteredExpenses {
+    final selectedMonthIndex = meses.indexOf(selectedMonth);
+
+    return expenses.where((e) {
+      final date = DateTime.parse(e['date']);
+      final category = e['categories']?['name']?.trim().toLowerCase() ?? '';
+
+      final matchesDate =
+          startDate == null ||
+          endDate == null ||
+          (date.isAfter(startDate!) && date.isBefore(endDate!));
+      final matchesCategory =
+          selectedCategory == null ||
+          category == selectedCategory!.toLowerCase();
+
+      final matchesMonth = selectedMonth == 'Todos'
+          ? true
+          : date.month == selectedMonthIndex;
+
+      return matchesDate && matchesCategory && matchesMonth;
+    }).toList();
+  }
 
   @override
   void initState() {
+    selectedMonth = meses[DateTime.now().month];
     super.initState();
 
     final channel = Supabase.instance.client.channel('group_members_channel');
@@ -576,10 +617,13 @@ class _GroupDetailPageState extends State<GroupDetailPage>
     );
   }
 
-  List<Map<String, dynamic>> get filteredExpenses {
+  List<Map<String, dynamic>> get filteredExpensesByMonth {
+    final selectedMonthIndex = meses.indexOf(selectedMonth);
+
     return expenses.where((e) {
       final date = DateTime.parse(e['date']);
       final category = e['categories']?['name']?.trim().toLowerCase() ?? '';
+
       final matchesDate =
           startDate == null ||
           endDate == null ||
@@ -587,7 +631,12 @@ class _GroupDetailPageState extends State<GroupDetailPage>
       final matchesCategory =
           selectedCategory == null ||
           category == selectedCategory!.toLowerCase();
-      return matchesDate && matchesCategory;
+
+      final matchesMonth = selectedMonth == 'Todos'
+          ? true
+          : date.month == selectedMonthIndex;
+
+      return matchesDate && matchesCategory && matchesMonth;
     }).toList();
   }
 
@@ -811,42 +860,65 @@ class _GroupDetailPageState extends State<GroupDetailPage>
     );
   }
 
-  Widget _buildExpenseList() {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Row(
+Widget _buildExpenseList() {
+  return Column(
+    crossAxisAlignment: CrossAxisAlignment.start,
+    children: [
+      Row(
+        children: [
+          const Icon(Icons.receipt_long, color: AppColors.accent, size: 22),
+          const SizedBox(width: 6),
+          const Text(
+            'Gastos registrados',
+            style: TextStyle(fontSize: 17, fontWeight: FontWeight.w600),
+          ),
+          const Spacer(),
+          IconButton(
+            icon: const Icon(Icons.add_card, color: AppColors.primary),
+            tooltip: 'Agregar gasto',
+            onPressed: () async {
+              final result = await Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (context) => ExpenseForm(groupId: widget.groupId),
+                ),
+              );
+              if (result == true) {
+                _loadGroupDetails();
+              }
+            },
+          ),
+        ],
+      ),
+      Padding(
+        padding: const EdgeInsets.symmetric(vertical: 8.0),
+        child: Row(
           children: [
-            const Icon(Icons.receipt_long, color: AppColors.accent, size: 22),
-            const SizedBox(width: 6),
-            const Text(
-              'Gastos registrados',
-              style: TextStyle(fontSize: 17, fontWeight: FontWeight.w600),
-            ),
-            const Spacer(),
-            IconButton(
-              icon: const Icon(Icons.add_card, color: AppColors.primary),
-              tooltip: 'Agregar gasto',
-              onPressed: () async {
-                final result = await Navigator.push(
-                  context,
-                  MaterialPageRoute(
-                    builder: (context) => ExpenseForm(groupId: widget.groupId),
-                  ),
-                );
-                if (result == true) {
-                  _loadGroupDetails();
-                }
+            const Text('Filtrar por mes:'),
+            const SizedBox(width: 8),
+            DropdownButton<String>(
+              value: selectedMonth,
+              items: meses.map((mes) {
+                return DropdownMenuItem(value: mes, child: Text(mes));
+              }).toList(),
+              onChanged: (nuevoMes) {
+                setState(() {
+                  selectedMonth = nuevoMes!;
+                });
               },
             ),
           ],
         ),
-        const SizedBox(height: 10),
-        if (filteredExpenses.isEmpty)
-          const Text(
-            'No hay gastos registrados.',
-            style: TextStyle(color: Colors.grey),
-          ),
+      ),
+
+      const SizedBox(height: 10),
+
+      if (filteredExpensesByMonth.isEmpty)
+        const Text(
+          'No hay gastos registrados.',
+          style: TextStyle(color: Colors.grey),
+        ),
+
         ...filteredExpenses.map((e) {
           final amount = (e['amount'] as num).toDouble();
           final name = e['users']?['name'] ?? 'Sin nombre';
