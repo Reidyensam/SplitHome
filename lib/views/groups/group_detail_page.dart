@@ -21,6 +21,8 @@ class GroupDetailPage extends StatefulWidget {
 
 class _GroupDetailPageState extends State<GroupDetailPage>
     with TickerProviderStateMixin {
+  bool showMembersExpanded = false;
+
   List<Map<String, dynamic>> members = [];
   List<Map<String, dynamic>> expenses = [];
   Map<String, double> balances = {};
@@ -327,18 +329,17 @@ class _GroupDetailPageState extends State<GroupDetailPage>
                 padding: const EdgeInsets.all(16),
                 children: [
                   _buildStatsSection(),
-                  const SizedBox(height: 16),
-                  _buildFilterSection(),
-                  const SizedBox(height: 16),
+
+                  const SizedBox(height: 1),
+                  _buildMemberList(),
+                  const SizedBox(height: 5),
+                  _buildExpenseList(),
+                  const SizedBox(height: 10),
                   ElevatedButton.icon(
                     onPressed: _exportGroupData,
                     icon: const Icon(Icons.share),
                     label: const Text('Exportar gastos'),
                   ),
-                  const SizedBox(height: 24),
-                  _buildMemberList(),
-                  const SizedBox(height: 24),
-                  _buildExpenseList(),
                 ],
               ),
             ),
@@ -546,77 +547,6 @@ class _GroupDetailPageState extends State<GroupDetailPage>
     );
   }
 
-  Widget _buildFilterSection() {
-    final uniqueCategories = expenses
-        .map((e) => e['categories']?['name'])
-        .whereType<String>()
-        .toSet()
-        .toList();
-
-    uniqueCategories.insert(0, 'Todas'); // Agrega opción "Todas" al inicio
-
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        const Text(
-          'Filtrar gastos',
-          style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
-        ),
-        const SizedBox(height: 8),
-        Row(
-          children: [
-            Expanded(
-              child: ElevatedButton.icon(
-                onPressed: () async {
-                  final picked = await showDateRangePicker(
-                    context: context,
-                    firstDate: DateTime(2020),
-                    lastDate: DateTime.now(),
-                  );
-                  if (picked != null) {
-                    setState(() {
-                      startDate = picked.start;
-                      endDate = picked.end;
-                    });
-                  }
-                },
-                icon: const Icon(Icons.date_range),
-                label: const Text('Por fecha'),
-              ),
-            ),
-            const SizedBox(width: 8),
-            Expanded(
-              child: DropdownButtonFormField<String>(
-                value: selectedCategory ?? 'Todas',
-                decoration: const InputDecoration(
-                  labelText: 'Categoría',
-                  border: OutlineInputBorder(),
-                ),
-                items: uniqueCategories
-                    .map(
-                      (cat) => DropdownMenuItem(value: cat, child: Text(cat)),
-                    )
-                    .toList(),
-                onChanged: (value) => setState(() {
-                  selectedCategory = value == 'Todas' ? null : value;
-                }),
-              ),
-            ),
-          ],
-        ),
-        const SizedBox(height: 12),
-        if (startDate != null && endDate != null)
-          Text(
-            'Rango seleccionado: ${startDate!.day}/${startDate!.month}/${startDate!.year} - ${endDate!.day}/${endDate!.month}/${endDate!.year}',
-            style: const TextStyle(
-              fontSize: 13,
-              color: AppColors.textSecondary,
-            ),
-          ),
-      ],
-    );
-  }
-
   List<Map<String, dynamic>> get filteredExpensesByMonth {
     final selectedMonthIndex = meses.indexOf(selectedMonth);
 
@@ -665,259 +595,274 @@ class _GroupDetailPageState extends State<GroupDetailPage>
   Widget _buildMemberList() {
     final currentUserId = Supabase.instance.client.auth.currentUser?.id;
 
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Row(
-          children: [
-            const Icon(Icons.group, color: AppColors.accent, size: 22),
-            const SizedBox(width: 6),
-            const Text(
-              'Miembros del grupo',
-              style: TextStyle(fontSize: 17, fontWeight: FontWeight.w600),
+    return Card(
+      margin: const EdgeInsets.symmetric(vertical: 8),
+      child: ExpansionTile(
+        initiallyExpanded: false,
+        onExpansionChanged: (expanded) {
+          setState(() => showMembersExpanded = expanded);
+        },
+        leading: const Icon(Icons.group_outlined, color: AppColors.primary),
+        title: Align(
+          alignment: Alignment.centerLeft,
+          child: Text(
+            'Miembros del grupo (${members.length})',
+            style: const TextStyle(
+              fontSize: 17,
+              fontWeight: FontWeight.w600,
+              color: Colors.white,
             ),
-            const Spacer(),
+          ),
+        ),
+        trailing: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
             if (currentUserRole == 'admin' || currentUserRole == 'super_admin')
               IconButton(
                 icon: const Icon(Icons.person_add, color: AppColors.primary),
                 tooltip: 'Agregar miembro',
                 onPressed: _showAddMemberDialog,
               ),
+            Icon(
+              showMembersExpanded ? Icons.expand_less : Icons.expand_more,
+              color: Colors.white,
+            ),
           ],
         ),
-        const SizedBox(height: 10),
-        if (members.isEmpty)
-          const Text(
-            'No hay miembros registrados.',
-            style: TextStyle(color: Colors.grey),
-          )
-        else
-          ...members.map((m) {
-            final user = m['users'] ?? {};
-            final name = user['name'] ?? 'Sin nombre';
-            final email = user['email'] ?? 'Sin correo';
-            final role = m['role'] ?? 'Sin rol';
-            final memberId = m['user_id'];
+        children: [
+          const SizedBox(height: 10),
+          if (members.isEmpty)
+            const Padding(
+              padding: EdgeInsets.all(12),
+              child: Text(
+                'No hay miembros registrados.',
+                style: TextStyle(color: Colors.grey),
+              ),
+            )
+          else
+            ...members.map((m) {
+              final user = m['users'] ?? {};
+              final name = user['name'] ?? 'Sin nombre';
+              final email = user['email'] ?? 'Sin correo';
+              final role = m['role'] ?? 'Sin rol';
+              final memberId = m['user_id'];
 
-            final isAdmin =
-                currentUserRole == 'admin' || currentUserRole == 'super_admin';
-            final isSelf = currentUserId != null && memberId == currentUserId;
+              final isAdmin =
+                  currentUserRole == 'admin' ||
+                  currentUserRole == 'super_admin';
+              final isSelf = currentUserId != null && memberId == currentUserId;
 
-            return Card(
-              margin: const EdgeInsets.symmetric(vertical: 6),
-              child: Padding(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 12,
-                  vertical: 8,
-                ),
-                child: Row(
-                  children: [
-                    const Icon(Icons.person_outline, size: 25),
-                    const SizedBox(width: 10),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(name, style: const TextStyle(fontSize: 15)),
-                          Text(
-                            '$email • Rol: $role',
-                            style: const TextStyle(
-                              fontSize: 13,
-                              color: AppColors.textSecondary,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                    IconButton(
-                      icon: const Icon(Icons.receipt_long, size: 23),
-                      tooltip: 'Ver gastos',
-                      onPressed: () {
-                        Navigator.push(
-                          context,
-                          MaterialPageRoute(
-                            builder: (context) => UserExpensePage(
-                              userId: memberId,
-                              userName: name,
-                              groupId: widget.groupId,
-                            ),
-                          ),
-                        );
-                      },
-                    ),
-                    if (isAdmin && !isSelf)
-                      IconButton(
-                        icon: const Icon(
-                          Icons.delete,
-                          size: 23,
-                          color: Colors.redAccent,
-                        ),
-                        tooltip: 'Eliminar miembro',
-                        onPressed: () async {
-                          final confirmed = await showDialog<bool>(
-                            context: context,
-                            builder: (dialogContext) => AlertDialog(
-                              title: const Text('¿Eliminar miembro?'),
-                              content: const Text(
-                                'Esta acción no se puede deshacer. ¿Estás seguro de que deseas eliminar este miembro?',
+              return Card(
+                margin: const EdgeInsets.symmetric(vertical: 6),
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 12,
+                    vertical: 8,
+                  ),
+                  child: Row(
+                    children: [
+                      const Icon(Icons.person_outline, size: 25),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(name, style: const TextStyle(fontSize: 15)),
+                            Text(
+                              '$email • Rol: $role',
+                              style: const TextStyle(
+                                fontSize: 13,
+                                color: AppColors.textSecondary,
                               ),
-                              actions: [
-                                TextButton(
-                                  onPressed: () =>
-                                      Navigator.pop(dialogContext, false),
-                                  child: const Text('Cancelar'),
-                                ),
-                                TextButton(
-                                  onPressed: () =>
-                                      Navigator.pop(dialogContext, true),
-                                  child: const Text('Eliminar'),
-                                ),
-                              ],
+                            ),
+                          ],
+                        ),
+                      ),
+                      IconButton(
+                        icon: const Icon(Icons.receipt_long, size: 23),
+                        tooltip: 'Ver gastos',
+                        onPressed: () {
+                          Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (context) => UserExpensePage(
+                                userId: memberId,
+                                userName: name,
+                                groupId: widget.groupId,
+                              ),
                             ),
                           );
-
-                          if (confirmed != true) return;
-
-                          final currentUserId =
-                              Supabase.instance.client.auth.currentUser?.id;
-                          final targetUserId = m['user_id']?.toString();
-                          final groupId = widget.groupId?.toString();
-
-                          if (groupId == null ||
-                              groupId.isEmpty ||
-                              targetUserId == null ||
-                              targetUserId.isEmpty) {
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              const SnackBar(
-                                content: Text(
-                                  '⚠️ No se puede eliminar: datos inválidos.',
+                        },
+                      ),
+                      if (isAdmin && !isSelf)
+                        IconButton(
+                          icon: const Icon(
+                            Icons.delete,
+                            size: 23,
+                            color: Colors.redAccent,
+                          ),
+                          tooltip: 'Eliminar miembro',
+                          onPressed: () async {
+                            final confirmed = await showDialog<bool>(
+                              context: context,
+                              builder: (dialogContext) => AlertDialog(
+                                title: const Text('¿Eliminar miembro?'),
+                                content: const Text(
+                                  'Esta acción no se puede deshacer. ¿Estás seguro de que deseas eliminar este miembro?',
                                 ),
+                                actions: [
+                                  TextButton(
+                                    onPressed: () =>
+                                        Navigator.pop(dialogContext, false),
+                                    child: const Text('Cancelar'),
+                                  ),
+                                  TextButton(
+                                    onPressed: () =>
+                                        Navigator.pop(dialogContext, true),
+                                    child: const Text('Eliminar'),
+                                  ),
+                                ],
                               ),
                             );
-                            return;
-                          }
 
-                          print(
-                            '🧾 Eliminando user_id=$targetUserId del grupo=$groupId',
-                          );
+                            if (confirmed != true) return;
 
-                          try {
-                            final response =
-                                await Supabase.instance.client
-                                        .from('group_members')
-                                        .delete()
-                                        .match({
-                                          'group_id': groupId,
-                                          'user_id': targetUserId,
-                                        })
-                                    as List?;
+                            final targetUserId = m['user_id']?.toString();
+                            final groupId = widget.groupId?.toString();
 
-                            final check = await Supabase.instance.client
-                                .from('group_members')
-                                .select()
-                                .eq('group_id', groupId)
-                                .eq('user_id', targetUserId);
-
-                            if (check.isEmpty) {
-                              // ✅ Eliminación confirmada
-                              setState(() {
-                                members.removeWhere(
-                                  (m) =>
-                                      m['user_id']?.toString() == targetUserId,
-                                );
-                              });
-
-                              ScaffoldMessenger.of(context).showSnackBar(
-                                const SnackBar(
-                                  content: Text('✅ Miembro eliminado'),
-                                ),
-                              );
-                            } else {
-                              // ❌ Algo falló (no se eliminó)
+                            if (groupId == null ||
+                                groupId.isEmpty ||
+                                targetUserId == null ||
+                                targetUserId.isEmpty) {
                               ScaffoldMessenger.of(context).showSnackBar(
                                 const SnackBar(
                                   content: Text(
-                                    '⚠️ No tienes permiso para eliminar este miembro.',
+                                    '⚠️ No se puede eliminar: datos inválidos.',
                                   ),
                                 ),
                               );
+                              return;
                             }
-                          } catch (e) {
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              SnackBar(
-                                content: Text('❌ Error al eliminar: $e'),
-                              ),
+
+                            print(
+                              '🧾 Eliminando user_id=$targetUserId del grupo=$groupId',
                             );
-                          }
-                        },
-                      ),
-                  ],
+
+                            try {
+                              await Supabase.instance.client
+                                  .from('group_members')
+                                  .delete()
+                                  .match({
+                                    'group_id': groupId,
+                                    'user_id': targetUserId,
+                                  });
+
+                              final check = await Supabase.instance.client
+                                  .from('group_members')
+                                  .select()
+                                  .eq('group_id', groupId)
+                                  .eq('user_id', targetUserId);
+
+                              if (check.isEmpty) {
+                                setState(() {
+                                  members.removeWhere(
+                                    (m) =>
+                                        m['user_id']?.toString() ==
+                                        targetUserId,
+                                  );
+                                });
+
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  const SnackBar(
+                                    content: Text('✅ Miembro eliminado'),
+                                  ),
+                                );
+                              } else {
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  const SnackBar(
+                                    content: Text(
+                                      '⚠️ No tienes permiso para eliminar este miembro.',
+                                    ),
+                                  ),
+                                );
+                              }
+                            } catch (e) {
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                SnackBar(
+                                  content: Text('❌ Error al eliminar: $e'),
+                                ),
+                              );
+                            }
+                          },
+                        ),
+                    ],
+                  ),
                 ),
-              ),
-            );
-          }),
-      ],
+              );
+            }).toList(),
+        ],
+      ),
     );
   }
 
-Widget _buildExpenseList() {
-  return Column(
-    crossAxisAlignment: CrossAxisAlignment.start,
-    children: [
-      Row(
-        children: [
-          const Icon(Icons.receipt_long, color: AppColors.accent, size: 22),
-          const SizedBox(width: 6),
-          const Text(
-            'Gastos registrados',
-            style: TextStyle(fontSize: 17, fontWeight: FontWeight.w600),
-          ),
-          const Spacer(),
-          IconButton(
-            icon: const Icon(Icons.add_card, color: AppColors.primary),
-            tooltip: 'Agregar gasto',
-            onPressed: () async {
-              final result = await Navigator.push(
-                context,
-                MaterialPageRoute(
-                  builder: (context) => ExpenseForm(groupId: widget.groupId),
-                ),
-              );
-              if (result == true) {
-                _loadGroupDetails();
-              }
-            },
-          ),
-        ],
-      ),
-      Padding(
-        padding: const EdgeInsets.symmetric(vertical: 8.0),
-        child: Row(
+  Widget _buildExpenseList() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
           children: [
-            const Text('Filtrar por mes:'),
-            const SizedBox(width: 8),
-            DropdownButton<String>(
-              value: selectedMonth,
-              items: meses.map((mes) {
-                return DropdownMenuItem(value: mes, child: Text(mes));
-              }).toList(),
-              onChanged: (nuevoMes) {
-                setState(() {
-                  selectedMonth = nuevoMes!;
-                });
+            const Icon(Icons.receipt_long, color: AppColors.accent, size: 22),
+            const SizedBox(width: 13),
+            const Text(
+              'Gastos registrados',
+              style: TextStyle(fontSize: 17, fontWeight: FontWeight.w600),
+            ),
+            const Spacer(),
+            IconButton(
+              icon: const Icon(Icons.add_card, color: AppColors.primary),
+              tooltip: 'Agregar gasto',
+              onPressed: () async {
+                final result = await Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (context) => ExpenseForm(groupId: widget.groupId),
+                  ),
+                );
+                if (result == true) {
+                  _loadGroupDetails();
+                }
               },
             ),
           ],
         ),
-      ),
-
-      const SizedBox(height: 10),
-
-      if (filteredExpensesByMonth.isEmpty)
-        const Text(
-          'No hay gastos registrados.',
-          style: TextStyle(color: Colors.grey),
+        Padding(
+          padding: const EdgeInsets.symmetric(vertical: 6.0),
+          child: Row(
+            children: [
+              const Text('Filtrar por mes:'),
+              const SizedBox(width: 8),
+              DropdownButton<String>(
+                value: selectedMonth,
+                items: meses.map((mes) {
+                  return DropdownMenuItem(value: mes, child: Text(mes));
+                }).toList(),
+                onChanged: (nuevoMes) {
+                  setState(() {
+                    selectedMonth = nuevoMes!;
+                  });
+                },
+              ),
+            ],
+          ),
         ),
+
+        const SizedBox(height: 10),
+
+        if (filteredExpensesByMonth.isEmpty)
+          const Text(
+            'No hay gastos registrados.',
+            style: TextStyle(color: Colors.grey),
+          ),
 
         ...filteredExpenses.map((e) {
           final amount = (e['amount'] as num).toDouble();
@@ -1055,9 +1000,7 @@ Widget _buildExpenseList() {
                                 );
                               }
 
-                              _loadGroupDetails(); // refresca la lista
-
-                              // Espera un momento antes de cerrar el BottomSheet
+                              _loadGroupDetails();
                               await Future.delayed(
                                 const Duration(milliseconds: 300),
                               );

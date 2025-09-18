@@ -21,7 +21,7 @@ class _DashboardPageState extends State<DashboardPage> {
   List<Map<String, dynamic>> recentNotifications = [];
   List<Map<String, dynamic>> userGroups = [];
   String? selectedGroupId;
-
+  bool showGroupsExpanded = false;
   bool groupWasCreatedByCurrentUser(String groupId) {
     final userId = Supabase.instance.client.auth.currentUser?.id;
     final group = userGroups.firstWhere(
@@ -320,8 +320,7 @@ class _DashboardPageState extends State<DashboardPage> {
                 const SizedBox(height: 16),
                 _buildRecentExpensesAcrossGroups(),
                 const SizedBox(height: 16),
-                if (role == 'admin')
-                  _buildAdminActions(),
+                if (role == 'admin') _buildAdminActions(),
               ],
             ),
           ),
@@ -381,166 +380,192 @@ class _DashboardPageState extends State<DashboardPage> {
       );
     }
 
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        const Text(
-          'Grupos Agregados:',
-          style: TextStyle(
-            fontSize: 18,
-            fontWeight: FontWeight.bold,
-            color: AppColors.primary,
+    return Card(
+      margin: const EdgeInsets.symmetric(vertical: 8),
+      child: ExpansionTile(
+        initiallyExpanded: false,
+        onExpansionChanged: (expanded) {
+          setState(() => showGroupsExpanded = expanded);
+        },
+        leading: const Icon(
+          Icons.group_outlined,
+          color: Color.fromARGB(255, 255, 255, 255),
+        ),
+        title: Align(
+          alignment: Alignment.centerLeft,
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Text(
+                'Grupos Agregados (${userGroups.length})',
+                style: const TextStyle(
+                  fontSize: 18,
+                  fontWeight: FontWeight.w500,
+                  color: Color.fromARGB(255, 255, 255, 255),
+                ),
+              ),
+              IconButton(
+                icon: const Icon(Icons.group_add, size: 24),
+                tooltip: 'Crear grupo',
+                color: AppColors.primary,
+                onPressed: () {
+                  Navigator.pushNamed(context, '/crearGrupo');
+                },
+              ),
+            ],
           ),
         ),
-        const SizedBox(height: 8),
-        ...userGroups.map((group) {
-          final isCreator = groupWasCreatedByCurrentUser(group['groupId']);
-          return Card(
-            color: AppColors.card,
-            child: ListTile(
-              leading: const Icon(Icons.group, color: AppColors.primary),
-              title: Text(group['groupName']),
-              trailing: isCreator
-                  ? SizedBox(
-                      width: 96,
-                      child: Row(
-                        mainAxisAlignment: MainAxisAlignment.end,
-                        children: [
-                          IconButton(
-                            icon: const Icon(
-                              Icons.edit,
-                              color: AppColors.primary,
+        children: [
+          const SizedBox(height: 8),
+          ...userGroups.map((group) {
+            final isCreator = groupWasCreatedByCurrentUser(group['groupId']);
+            return Card(
+              color: AppColors.card,
+              child: ListTile(
+                leading: const Icon(Icons.group, color: AppColors.primary),
+                title: Text(group['groupName']),
+                trailing: isCreator
+                    ? SizedBox(
+                        width: 96,
+                        child: Row(
+                          mainAxisAlignment: MainAxisAlignment.end,
+                          children: [
+                            IconButton(
+                              icon: const Icon(
+                                Icons.edit,
+                                color: AppColors.primary,
+                              ),
+                              tooltip: 'Editar grupo',
+                              onPressed: () {
+                                Navigator.pushNamed(
+                                  context,
+                                  '/edit_group_page',
+                                  arguments: {
+                                    'groupId': group['groupId'],
+                                    'groupName': group['groupName'],
+                                  },
+                                );
+                              },
                             ),
-                            tooltip: 'Editar grupo',
-                            onPressed: () {
-                              Navigator.pushNamed(
-                                context,
-                                '/edit_group_page',
-                                arguments: {
-                                  'groupId': group['groupId'],
-                                  'groupName': group['groupName'],
-                                },
-                              );
-                            },
-                          ),
-                          IconButton(
-                            icon: const Icon(
-                              Icons.delete,
-                              color: Colors.redAccent,
-                            ),
-                            tooltip: 'Eliminar grupo',
-                            onPressed: () async {
-                              final confirm = await showDialog<bool>(
-                                context: context,
-                                builder: (context) {
-                                  int secondsLeft = 7;
-                                  bool enabled = false;
-                                  late Timer timer;
+                            IconButton(
+                              icon: const Icon(
+                                Icons.delete,
+                                color: Colors.redAccent,
+                              ),
+                              tooltip: 'Eliminar grupo',
+                              onPressed: () async {
+                                final confirm = await showDialog<bool>(
+                                  context: context,
+                                  builder: (context) {
+                                    int secondsLeft = 7;
+                                    bool enabled = false;
+                                    late Timer timer;
 
-                                  return StatefulBuilder(
-                                    builder: (context, setState) {
-                                      if (secondsLeft == 7) {
-                                        timer = Timer.periodic(
-                                          const Duration(seconds: 1),
-                                          (t) {
-                                            if (secondsLeft > 1) {
-                                              setState(() => secondsLeft--);
-                                            } else {
-                                              t.cancel();
-                                              setState(() {
-                                                secondsLeft = 0;
-                                                enabled = true;
-                                              });
-                                            }
-                                          },
-                                        );
-                                      }
+                                    return StatefulBuilder(
+                                      builder: (context, setState) {
+                                        if (secondsLeft == 7) {
+                                          timer = Timer.periodic(
+                                            const Duration(seconds: 1),
+                                            (t) {
+                                              if (secondsLeft > 1) {
+                                                setState(() => secondsLeft--);
+                                              } else {
+                                                t.cancel();
+                                                setState(() {
+                                                  secondsLeft = 0;
+                                                  enabled = true;
+                                                });
+                                              }
+                                            },
+                                          );
+                                        }
 
-                                      return AlertDialog(
-                                        title: const Text('¿Eliminar grupo?'),
-                                        content: Column(
-                                          mainAxisSize: MainAxisSize.min,
-                                          children: const [
-                                            Text(
-                                              'Esta acción no se puede deshacer.',
+                                        return AlertDialog(
+                                          title: const Text('¿Eliminar grupo?'),
+                                          content: Column(
+                                            mainAxisSize: MainAxisSize.min,
+                                            children: const [
+                                              Text(
+                                                'Esta acción no se puede deshacer.',
+                                              ),
+                                              SizedBox(height: 12),
+                                              Text(
+                                                'El botón eliminar se habilitará en 7 segundos...',
+                                              ),
+                                            ],
+                                          ),
+                                          actions: [
+                                            TextButton(
+                                              onPressed: () {
+                                                timer.cancel();
+                                                Navigator.pop(context, false);
+                                              },
+                                              child: const Text('Cancelar'),
                                             ),
-                                            SizedBox(height: 12),
-                                            Text(
-                                              'El botón eliminar se habilitará en 7 segundos...',
+                                            ElevatedButton(
+                                              onPressed: enabled
+                                                  ? () {
+                                                      timer.cancel();
+                                                      Navigator.pop(
+                                                        context,
+                                                        true,
+                                                      );
+                                                    }
+                                                  : null,
+                                              style: ElevatedButton.styleFrom(
+                                                backgroundColor:
+                                                    Colors.redAccent,
+                                              ),
+                                              child: Text(
+                                                enabled
+                                                    ? 'Eliminar definitivamente'
+                                                    : 'Eliminar (${secondsLeft})',
+                                              ),
                                             ),
                                           ],
-                                        ),
-                                        actions: [
-                                          TextButton(
-                                            onPressed: () {
-                                              timer.cancel();
-                                              Navigator.pop(context, false);
-                                            },
-                                            child: const Text('Cancelar'),
-                                          ),
-                                          ElevatedButton(
-                                            onPressed: enabled
-                                                ? () {
-                                                    timer.cancel();
-                                                    Navigator.pop(
-                                                      context,
-                                                      true,
-                                                    );
-                                                  }
-                                                : null,
-                                            style: ElevatedButton.styleFrom(
-                                              backgroundColor: Colors.redAccent,
-                                            ),
-                                            child: Text(
-                                              enabled
-                                                  ? 'Eliminar definitivamente'
-                                                  : 'Eliminar (${secondsLeft})',
-                                            ),
-                                          ),
-                                        ],
-                                      );
-                                    },
-                                  );
-                                },
-                              );
+                                        );
+                                      },
+                                    );
+                                  },
+                                );
 
-                              if (confirm == true) {
-                                await Supabase.instance.client
-                                    .from('group_members')
-                                    .delete()
-                                    .eq('group_id', group['groupId']);
+                                if (confirm == true) {
+                                  await Supabase.instance.client
+                                      .from('group_members')
+                                      .delete()
+                                      .eq('group_id', group['groupId']);
 
-                                await Supabase.instance.client
-                                    .from('groups')
-                                    .delete()
-                                    .eq('id', group['groupId']);
+                                  await Supabase.instance.client
+                                      .from('groups')
+                                      .delete()
+                                      .eq('id', group['groupId']);
 
-                                await _loadUserGroups();
-                              }
-                            },
-                          ),
-                        ],
-                      ),
-                    )
-                  : null,
-
-              onTap: () {
-                setState(() {
-                  selectedGroupId = group['groupId'];
-                });
-                Navigator.pushNamed(
-                  context,
-                  '/group_detail_page',
-                  arguments: {
-                    'groupId': group['groupId'],
-                    'groupName': group['groupName'],
-                  },
-                );
-              },
-            ),
-          );
-        }),
-      ],
+                                  await _loadUserGroups();
+                                }
+                              },
+                            ),
+                          ],
+                        ),
+                      )
+                    : null,
+                onTap: () {
+                  setState(() {
+                    selectedGroupId = group['groupId'];
+                  });
+                  Navigator.pushNamed(
+                    context,
+                    '/group_detail_page',
+                    arguments: {
+                      'groupId': group['groupId'],
+                      'groupName': group['groupName'],
+                    },
+                  );
+                },
+              ),
+            );
+          }).toList(),
+        ],
+      ),
     );
   }
 
@@ -709,21 +734,7 @@ class _DashboardPageState extends State<DashboardPage> {
         spacing: 24,
         runSpacing: 16,
         children: [
-          Column(
-            children: [
-              IconButton(
-                icon: const Icon(Icons.group_add, size: 32),
-                tooltip: 'Crear grupo',
-                color: AppColors.primary,
-                onPressed: () {
-                  Navigator.pushNamed(context, '/crearGrupo');
-                },
-              ),
-              const Text('Crear grupo'),
-            ],
-          ),
-
-          Column(
+           Column(
             children: [
               IconButton(
                 icon: const Icon(Icons.account_balance, size: 32),

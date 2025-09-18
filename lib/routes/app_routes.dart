@@ -12,6 +12,7 @@ class AppRoutes {
     '/login': (context) => const LoginPage(),
     '/dashboard': (context) => const DashboardPage(),
     '/register': (context) => const RegisterPage(),
-    '/super_admin': (context) => const SuperAdminPanel(), 
+    '/super_admin': (context) => const SuperAdminPanel(),
+    '/balances': (context) => const BalancePage(), 
   };
 }

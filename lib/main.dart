@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:splithome/views/balances/balance_page.dart';
 import 'package:splithome/views/super_admin/super_admin_panel.dart';
 import 'package:splithome/views/groups/edit_group_page.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
@@ -57,6 +58,7 @@ class SplitHomeApp extends StatelessWidget {
         '/promote_user': (context) => const PromoteUserPage(),
         '/crearGrupo': (context) => const GroupSetupPage(),
         '/super_admin_panel': (context) => const SuperAdminPanel(),
+        '/balances': (context) => const BalancePage(),
       },
       onGenerateRoute: (settings) {
         if (settings.name == '/group_detail_page') {
