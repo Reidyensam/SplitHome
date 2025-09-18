@@ -320,7 +320,8 @@ class _DashboardPageState extends State<DashboardPage> {
                 const SizedBox(height: 16),
                 _buildRecentExpensesAcrossGroups(),
                 const SizedBox(height: 16),
-                if (role == 'admin') _buildAdminActions(),
+                _buildBalanceButton(),
+
               ],
             ),
           ),
@@ -727,7 +728,7 @@ class _DashboardPageState extends State<DashboardPage> {
     );
   }
 
-  Widget _buildAdminActions() {
+  Widget _buildBalanceButton() {
     return Center(
       child: Wrap(
         alignment: WrapAlignment.center,
