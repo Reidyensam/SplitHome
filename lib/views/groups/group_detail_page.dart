@@ -28,10 +28,50 @@ class _GroupDetailPageState extends State<GroupDetailPage>
   Map<String, double> balances = {};
   bool isLoading = true;
   bool showStatsDetails = false;
-
+  double monthlyBudget = 0.0;
   DateTime? startDate;
   DateTime? endDate;
   String? selectedCategory;
+  void _showEditBudgetDialog() {
+    final TextEditingController budgetController = TextEditingController();
+
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Editar presupuesto mensual'),
+        content: TextField(
+          controller: budgetController,
+          keyboardType: TextInputType.number,
+          decoration: const InputDecoration(
+            labelText: 'Nuevo presupuesto (Bs.)',
+            border: OutlineInputBorder(),
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancelar'),
+          ),
+          ElevatedButton.icon(
+            icon: const Icon(Icons.save),
+            label: const Text('Guardar'),
+            onPressed: () async {
+              final input = budgetController.text.trim();
+              final newBudget = double.tryParse(input);
+              if (newBudget != null) {
+                await _updateMonthlyBudget(newBudget);
+                Navigator.pop(context);
+              } else {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(content: Text('Ingrese un número válido')),
+                );
+              }
+            },
+          ),
+        ],
+      ),
+    );
+  }
 
   final double threshold = 1000.0;
 
@@ -183,6 +223,16 @@ class _GroupDetailPageState extends State<GroupDetailPage>
       print(
         '✅ Preparando visualización: miembros=${enrichedMembers.length}, gastos=${expenseData.length}',
       );
+      final budgetResponse = await client
+          .from('groups')
+          .select('monthly_budget')
+          .eq('id', widget.groupId)
+          .maybeSingle();
+
+      final budgetValue = budgetResponse?['monthly_budget'];
+      print('📥 Presupuesto recibido: $budgetValue');
+
+      monthlyBudget = budgetValue is num ? budgetValue.toDouble() : 0.0;
       setState(() {
         members = enrichedMembers;
         expenses = expenseData;
@@ -197,6 +247,33 @@ class _GroupDetailPageState extends State<GroupDetailPage>
       setState(() {
         isLoading = false;
       });
+    }
+  }
+
+  Future<void> _updateMonthlyBudget(double newBudget) async {
+    final client = Supabase.instance.client;
+
+    try {
+      final response = await client
+          .from('groups')
+          .update({'monthly_budget': newBudget})
+          .eq('id', widget.groupId)
+          .select(); // 👈 Esto devuelve la fila actualizada
+
+      print('✅ Supabase update response: $response');
+
+      setState(() {
+        monthlyBudget = newBudget;
+      });
+
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('Presupuesto actualizado')));
+    } catch (e) {
+      print('❌ Error al actualizar presupuesto: $e');
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Error al guardar el presupuesto')),
+      );
     }
   }
 
@@ -316,6 +393,11 @@ class _GroupDetailPageState extends State<GroupDetailPage>
 
   @override
   Widget build(BuildContext context) {
+    final double total = expenses.fold<double>(
+      0,
+      (sum, e) => sum + (e['amount'] as num).toDouble(),
+    );
+
     return Scaffold(
       appBar: AppBar(
         title: Text('Grupo: ${widget.groupName}'),
@@ -329,17 +411,126 @@ class _GroupDetailPageState extends State<GroupDetailPage>
                 padding: const EdgeInsets.all(16),
                 children: [
                   _buildStatsSection(),
-
                   const SizedBox(height: 1),
                   _buildMemberList(),
+
+                  Card(
+                    elevation: 3,
+                    margin: const EdgeInsets.symmetric(vertical: 12),
+                    child: Padding(
+                      padding: const EdgeInsets.all(16),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Row(
+                            children: [
+                              const Icon(
+                                Icons.account_balance_wallet,
+                                color: Color.fromARGB(255, 0, 195, 255),
+                              ),
+                              const SizedBox(width: 8),
+                              Text(
+                                monthlyBudget > 0
+                                    ? 'Presupuesto mensual: Bs. ${monthlyBudget.toStringAsFixed(2)}'
+                                    : 'Presupuesto no establecido',
+                                style: const TextStyle(
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
+                              const Spacer(),
+                              if (currentUserRole == 'admin')
+                                IconButton(
+                                  icon: const Icon(
+                                    Icons.edit,
+                                    color: Color.fromARGB(255, 0, 195, 255),
+                                  ),
+                                  tooltip: monthlyBudget > 0
+                                      ? 'Editar presupuesto'
+                                      : 'Establecer presupuesto',
+                                  onPressed: _showEditBudgetDialog,
+                                ),
+                            ],
+                          ),
+                          if (monthlyBudget > 0) ...[
+                            const SizedBox(height: 12),
+                            LinearProgressIndicator(
+                              value: (total / monthlyBudget).clamp(0.0, 1.0),
+                              backgroundColor: Colors.grey[300],
+                              color: total >= monthlyBudget
+                                  ? Colors.red
+                                  : total >= monthlyBudget * 0.75
+                                  ? Colors.orange
+                                  : Colors.green,
+                              minHeight: 10,
+                            ),
+                            const SizedBox(height: 8),
+                            Row(
+                              children: [
+                                Icon(
+                                  total >= monthlyBudget
+                                      ? Icons.warning
+                                      : total >= monthlyBudget * 0.75
+                                      ? Icons.info
+                                      : Icons.check_circle,
+                                  color: total >= monthlyBudget
+                                      ? Colors.red
+                                      : total >= monthlyBudget * 0.75
+                                      ? Colors.orange
+                                      : Colors.green,
+                                ),
+                                const SizedBox(width: 8),
+                                Expanded(
+                                  child: Text(
+                                    total >= monthlyBudget
+                                        ? '⚠️ ¡Presupuesto mensual excedido!'
+                                        : total >= monthlyBudget * 0.75
+                                        ? '🔔 Estás alcanzando el presupuesto mensual'
+                                        : 'Presupuesto en curso',
+                                    style: TextStyle(
+                                      color: total >= monthlyBudget
+                                          ? Colors.red
+                                          : const Color.fromARGB(
+                                              221,
+                                              168,
+                                              168,
+                                              168,
+                                            ),
+                                      fontWeight: FontWeight.w500,
+                                    ),
+                                  ),
+                                ),
+                                Text(
+                                  'Usado: ${(total / monthlyBudget * 100).toStringAsFixed(1)}%',
+                                  style: const TextStyle(
+                                    fontWeight: FontWeight.w500,
+                                  ),
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 6),
+                            Text(
+                              'Disponible: Bs. ${(monthlyBudget - total).clamp(0.0, monthlyBudget).toStringAsFixed(2)}',
+                              style: const TextStyle(
+                                fontWeight: FontWeight.w500,
+                              ),
+                            ),
+                          ] else ...[
+                            const SizedBox(height: 12),
+                            const Text(
+                              'Define un presupuesto mensual para activar el seguimiento.',
+                              style: TextStyle(
+                                color: Colors.orange,
+                                fontWeight: FontWeight.w500,
+                              ),
+                            ),
+                          ],
+                        ],
+                      ),
+                    ),
+                  ),
+
                   const SizedBox(height: 5),
                   _buildExpenseList(),
-                  const SizedBox(height: 10),
-                  ElevatedButton.icon(
-                    onPressed: _exportGroupData,
-                    icon: const Icon(Icons.share),
-                    label: const Text('Exportar gastos'),
-                  ),
                 ],
               ),
             ),
@@ -347,15 +538,19 @@ class _GroupDetailPageState extends State<GroupDetailPage>
   }
 
   Widget _buildStatsSection() {
-    final total = expenses.fold<double>(
+    final double total = expenses.fold<double>(
       0,
       (sum, e) => sum + (e['amount'] as num).toDouble(),
     );
     final average = members.isNotEmpty ? total / members.length : 0;
 
-    final sorted = balances.entries.toList()
-      ..sort((a, b) => b.value.compareTo(a.value));
+    final validUserIds = members.map((m) => m['user_id']).toSet();
+    final filteredBalances = Map.fromEntries(
+      balances.entries.where((e) => validUserIds.contains(e.key)),
+    );
 
+    final sorted = filteredBalances.entries.toList()
+      ..sort((a, b) => b.value.compareTo(a.value));
     final topSpender = sorted.isNotEmpty ? sorted.first : null;
     final lowestSpender = sorted.length > 1 ? sorted.last : null;
 
@@ -408,6 +603,7 @@ class _GroupDetailPageState extends State<GroupDetailPage>
                 ),
               ],
             ),
+
             const SizedBox(height: 4),
             Row(
               children: [
@@ -568,28 +764,6 @@ class _GroupDetailPageState extends State<GroupDetailPage>
 
       return matchesDate && matchesCategory && matchesMonth;
     }).toList();
-  }
-
-  void _exportGroupData() async {
-    final exportText = filteredExpenses
-        .map((e) {
-          final name = e['users']?['name'] ?? 'Sin nombre';
-          final editorName = e['editor']?['name'];
-          final wasEdited = editorName != null && editorName != name;
-          final title = e['title'];
-          final amount = e['amount'];
-          final date = e['date'].toString().split(' ')[0];
-          return '$name: $title - Bs. $amount ($date)';
-        })
-        .join(' ');
-
-    if (exportText.trim().isNotEmpty) {
-      await Share.share(exportText, subject: 'Exportación de gastos del grupo');
-    } else {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('No hay gastos para exportar')),
-      );
-    }
   }
 
   Widget _buildMemberList() {
@@ -860,7 +1034,7 @@ class _GroupDetailPageState extends State<GroupDetailPage>
 
         if (filteredExpensesByMonth.isEmpty)
           const Text(
-            'No hay gastos registrados.',
+            'No hay gastos registrados en este mes.',
             style: TextStyle(color: Colors.grey),
           ),
 
