@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:splithome/views/expenses/expense_form.dart';
+import 'package:splithome/views/groups/group_comments_section.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
-import 'package:share_plus/share_plus.dart';
 import '../../core/constants.dart';
 import '../dashboard/user_expense_page.dart';
 
@@ -32,6 +32,8 @@ class _GroupDetailPageState extends State<GroupDetailPage>
   DateTime? startDate;
   DateTime? endDate;
   String? selectedCategory;
+  int selectedMonthIndex = DateTime.now().month; // 1–12
+int selectedYear = DateTime.now().year;
   void _showEditBudgetDialog() {
     final TextEditingController budgetController = TextEditingController();
 
@@ -412,6 +414,7 @@ class _GroupDetailPageState extends State<GroupDetailPage>
                 children: [
                   _buildStatsSection(),
                   const SizedBox(height: 1),
+
                   _buildMemberList(),
 
                   Card(
@@ -531,7 +534,16 @@ class _GroupDetailPageState extends State<GroupDetailPage>
 
                   const SizedBox(height: 5),
                   _buildExpenseList(),
+                  const SizedBox(height: 15),
+
+GroupCommentsSection(
+  groupId: widget.groupId,
+  month: selectedMonthIndex,
+  year: selectedYear,
+),
+
                 ],
+                
               ),
             ),
     );
@@ -1021,10 +1033,11 @@ class _GroupDetailPageState extends State<GroupDetailPage>
                   return DropdownMenuItem(value: mes, child: Text(mes));
                 }).toList(),
                 onChanged: (nuevoMes) {
-                  setState(() {
-                    selectedMonth = nuevoMes!;
-                  });
-                },
+  setState(() {
+    selectedMonth = nuevoMes!;
+    selectedMonthIndex = meses.indexOf(nuevoMes); // ← esto es clave
+  });
+},
               ),
             ],
           ),
