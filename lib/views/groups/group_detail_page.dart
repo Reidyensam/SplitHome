@@ -426,7 +426,7 @@ class _GroupDetailPageState extends State<GroupDetailPage>
                             children: [
                               const Icon(
                                 Icons.account_balance_wallet,
-                                color: Color.fromARGB(255, 0, 195, 255),
+                                color: Color.fromARGB(255, 11, 169, 218),
                               ),
                               const SizedBox(width: 8),
                               Text(
@@ -442,7 +442,7 @@ class _GroupDetailPageState extends State<GroupDetailPage>
                                 IconButton(
                                   icon: const Icon(
                                     Icons.edit,
-                                    color: Color.fromARGB(255, 0, 195, 255),
+                                    color: Color.fromARGB(255, 11, 169, 218),
                                   ),
                                   tooltip: monthlyBudget > 0
                                       ? 'Editar presupuesto'
