@@ -33,7 +33,7 @@ class _GroupDetailPageState extends State<GroupDetailPage>
   DateTime? endDate;
   String? selectedCategory;
   int selectedMonthIndex = DateTime.now().month; // 1–12
-int selectedYear = DateTime.now().year;
+  int selectedYear = DateTime.now().year;
   void _showEditBudgetDialog() {
     final TextEditingController budgetController = TextEditingController();
 
@@ -536,14 +536,12 @@ int selectedYear = DateTime.now().year;
                   _buildExpenseList(),
                   const SizedBox(height: 15),
 
-GroupCommentsSection(
-  groupId: widget.groupId,
-  month: selectedMonthIndex,
-  year: selectedYear,
-),
-
+                  GroupCommentsSection(
+                    groupId: widget.groupId,
+                    month: selectedMonthIndex,
+                    year: selectedYear,
+                  ),
                 ],
-                
               ),
             ),
     );
@@ -1033,11 +1031,13 @@ GroupCommentsSection(
                   return DropdownMenuItem(value: mes, child: Text(mes));
                 }).toList(),
                 onChanged: (nuevoMes) {
-  setState(() {
-    selectedMonth = nuevoMes!;
-    selectedMonthIndex = meses.indexOf(nuevoMes); // ← esto es clave
-  });
-},
+                  setState(() {
+                    selectedMonth = nuevoMes!;
+                    selectedMonthIndex = meses.indexOf(
+                      nuevoMes,
+                    ); // ← esto es clave
+                  });
+                },
               ),
             ],
           ),

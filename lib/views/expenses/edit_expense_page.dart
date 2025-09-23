@@ -38,16 +38,35 @@ class _ExpenseFormState extends State<ExpenseForm> {
   }
 
   Future<void> _loadCategories() async {
+
+  try {
     final response = await Supabase.instance.client
         .from('categories')
         .select('id, name, icon, color')
         .order('name');
 
+    debugPrint('📦 Categorías cargadas desde Supabase: $response');
+
     final loadedCategories = List<Map<String, dynamic>>.from(response);
 
+    debugPrint('🔍 Nombres en categorías cargadas: ${loadedCategories.map((c) => c['name']).toList()}');
+
     String? initialCategoryId;
-    if (widget.expense != null) {
-      initialCategoryId = widget.expense!['category_id']?.toString();
+
+    if (widget.expense != null && widget.expense!['categories'] != null) {
+      final categoryName = widget.expense!['categories']['name'];
+Map<String, dynamic>? match;
+try {
+  match = loadedCategories.firstWhere(
+    (cat) => cat['name'].toString().trim().toLowerCase() == categoryName.toString().trim().toLowerCase(),
+  );
+} catch (_) {
+  match = null;
+}
+initialCategoryId = match?['id']?.toString();
+
+      debugPrint('🔍 Nombre de categoría recibido: $categoryName');
+      debugPrint('🔍 ID encontrado: $initialCategoryId');
     }
 
     setState(() {
@@ -56,11 +75,11 @@ class _ExpenseFormState extends State<ExpenseForm> {
     });
 
     debugPrint('🧠 Categoría seleccionada: $selectedCategoryId');
-    final exists = categoryOptions.any(
-      (cat) => cat['id'].toString() == selectedCategoryId,
-    );
-    debugPrint('¿Existe en opciones? ${exists ? "Sí" : "No"}');
+    debugPrint('¿Existe en opciones? ${categoryOptions.any((cat) => cat['id'].toString() == selectedCategoryId) ? "Sí" : "No"}');
+  } catch (error) {
+    debugPrint('❌ Error en _loadCategories: $error');
   }
+}
 
   Future<void> _submitExpense() async {
     if (_formKey.currentState!.validate()) {
@@ -122,18 +141,19 @@ class _ExpenseFormState extends State<ExpenseForm> {
     }
   }
 
-  @override
-  void initState() {
-    super.initState();
-    final expense = widget.expense;
-    if (expense != null) {
-      title = expense['title'] ?? '';
-      amount = (expense['amount'] as num).toDouble();
-      selectedDate = DateTime.parse(expense['date']);
-      selectedCategoryId = expense['category_id']?.toString();
-    }
-    _loadCategories();
+@override
+void initState() {
+  super.initState();
+  final expense = widget.expense;
+  if (expense != null) {
+    title = expense['title'] ?? '';
+    amount = (expense['amount'] as num).toDouble();
+    selectedDate = DateTime.parse(expense['date']);
   }
+  _loadCategories(); 
+  debugPrint('🚀 Ejecutando _loadCategories');
+}
+
 
   @override
   Widget build(BuildContext context) {
@@ -180,10 +200,15 @@ class _ExpenseFormState extends State<ExpenseForm> {
                   ),
                 ],
               ),
+
               const SizedBox(height: 16),
+
               DropdownButtonFormField<String>(
                 value: selectedCategoryId,
                 items: categoryOptions.map((cat) {
+                  debugPrint(
+                    '🔍 Opciones disponibles: ${categoryOptions.map((c) => c['id']).toList()}',
+                  );
                   return DropdownMenuItem(
                     value: cat['id'].toString(),
                     child: Row(

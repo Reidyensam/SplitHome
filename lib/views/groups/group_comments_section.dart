@@ -2,6 +2,22 @@ import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:intl/intl.dart';
 
+String formatearFecha(String isoDate, {String? updatedIso}) {
+  try {
+    final created = DateTime.parse(isoDate).toLocal();
+    final updated = updatedIso != null
+        ? DateTime.tryParse(updatedIso)?.toLocal()
+        : null;
+    final fecha = DateFormat('dd/MM/yyyy – HH:mm').format(created);
+    final editado = updated != null && updated.isAfter(created)
+        ? ' (editado)'
+        : '';
+    return '$fecha$editado';
+  } catch (e) {
+    return 'Fecha inválida';
+  }
+}
+
 class GroupCommentsSection extends StatefulWidget {
   final String groupId;
   final int month;
@@ -25,9 +41,27 @@ class _GroupCommentsSectionState extends State<GroupCommentsSection> {
   final Map<String, TextEditingController> replyControllers = {};
   String? editingCommentId;
 
+  Widget _buildContentWithMentions(String content, {bool isRoot = false}) {
+    final words = content.split(' ');
+    return Text.rich(
+      TextSpan(
+        children: words.map((word) {
+          final isMention = word.startsWith('@');
+          return TextSpan(
+            text: '$word ',
+            style: TextStyle(
+              fontSize: isRoot ? 16 : 14,
+              color: isMention ? const Color.fromARGB(255, 165, 61, 206) : null,
+              fontWeight: isMention ? FontWeight.bold : null,
+            ),
+          );
+        }).toList(),
+      ),
+    );
+  }
+
   Future<void> _loadComments() async {
-    final client = Supabase.instance.client;
-    final response = await client
+    final response = await Supabase.instance.client
         .from('group_comments')
         .select('*, users(name)')
         .eq('group_id', widget.groupId)
@@ -56,6 +90,7 @@ class _GroupCommentsSectionState extends State<GroupCommentsSection> {
       'year': widget.year,
       'content': content,
       'parent_id': parentId,
+      'created_at': DateTime.now().toUtc().toIso8601String(),
     });
 
     controller.clear();
@@ -70,12 +105,15 @@ class _GroupCommentsSectionState extends State<GroupCommentsSection> {
         .from('group_comments')
         .update({
           'content': content,
-          'updated_at': DateTime.now().toIso8601String(),
+          'updated_at': DateTime.now().toUtc().toIso8601String(),
         })
         .eq('id', commentId);
 
-    editingCommentId = null;
-    editController.clear();
+    setState(() {
+      editingCommentId = null;
+      editController.clear();
+    });
+
     await _loadComments();
   }
 
@@ -140,25 +178,6 @@ class _GroupCommentsSectionState extends State<GroupCommentsSection> {
     super.dispose();
   }
 
-  Widget _buildContentWithMentions(String content, {bool isRoot = false}) {
-    final words = content.split(' ');
-    return Text.rich(
-      TextSpan(
-        children: words.map((word) {
-          final isMention = word.startsWith('@');
-          return TextSpan(
-            text: '$word ',
-            style: TextStyle(
-              fontSize: isRoot ? 16 : 16,
-              color: isMention ? const Color.fromARGB(255, 165, 61, 206) : null,
-              fontWeight: isMention ? FontWeight.bold : null,
-            ),
-          );
-        }).toList(),
-      ),
-    );
-  }
-
   @override
   Widget build(BuildContext context) {
     final currentUserId = Supabase.instance.client.auth.currentUser?.id;
@@ -186,6 +205,7 @@ class _GroupCommentsSectionState extends State<GroupCommentsSection> {
               style: TextStyle(color: Colors.grey[600]),
             ),
           ),
+
         ...rootComments.map((c) {
           final isOwner = c['user_id'] == currentUserId;
           final isEditing = editingCommentId == c['id'];
@@ -258,12 +278,13 @@ class _GroupCommentsSectionState extends State<GroupCommentsSection> {
                   ),
                   const SizedBox(height: 4),
                   Text(
-                    DateFormat(
-                      'dd/MM/yyyy – HH:mm',
-                    ).format(DateTime.parse(c['created_at'])),
-                    style: TextStyle(
+                    formatearFecha(
+                      c['created_at'],
+                      updatedIso: c['updated_at'],
+                    ),
+                    style: const TextStyle(
                       fontSize: 13,
-                      color: const Color.fromARGB(255, 216, 216, 216),
+                      color: Color.fromARGB(255, 216, 216, 216),
                     ),
                   ),
                   const SizedBox(height: 4),
@@ -276,12 +297,14 @@ class _GroupCommentsSectionState extends State<GroupCommentsSection> {
                         )
                       : _buildContentWithMentions(c['content'], isRoot: true),
                   const SizedBox(height: 8),
+
                   ...commentReplies.map((r) {
                     final isReplyOwner = r['user_id'] == currentUserId;
                     final isReplyEditing = editingCommentId == r['id'];
                     final nombreR = r['users']['name'] ?? 'Usuario';
                     final colorR = Colors
                         .primaries[nombreR.hashCode % Colors.primaries.length];
+
                     return Padding(
                       padding: const EdgeInsets.only(left: 16, top: 8),
                       child: Container(
@@ -347,6 +370,17 @@ class _GroupCommentsSectionState extends State<GroupCommentsSection> {
                               ],
                             ),
                             const SizedBox(height: 2),
+                            Text(
+                              formatearFecha(
+                                r['created_at'],
+                                updatedIso: r['updated_at'],
+                              ),
+                              style: const TextStyle(
+                                fontSize: 12,
+                                color: Color.fromARGB(255, 180, 180, 180),
+                              ),
+                            ),
+                            const SizedBox(height: 2),
                             isReplyEditing
                                 ? TextField(
                                     controller: editController,
@@ -360,6 +394,7 @@ class _GroupCommentsSectionState extends State<GroupCommentsSection> {
                       ),
                     );
                   }),
+
                   const SizedBox(height: 1),
                   TextField(
                     controller: replyControllers[c['id']],
@@ -379,23 +414,24 @@ class _GroupCommentsSectionState extends State<GroupCommentsSection> {
             ),
           );
         }),
+
         const Divider(height: 18),
-Container(
-  decoration: BoxDecoration(
-    color: const Color.fromARGB(255, 206, 206, 206),
-    borderRadius: BorderRadius.circular(8),
-  ),
-  padding: const EdgeInsets.symmetric(horizontal: 12),
-  child: TextField(
-    controller: commentController,
-    style: const TextStyle(color: Colors.white),
-    decoration: const InputDecoration(
-      labelText: 'Escribe un comentario',
-      labelStyle: TextStyle(color: Color.fromARGB(255, 22, 22, 22)),
-      border: InputBorder.none,
-    ),
-  ),
-),
+        Container(
+          decoration: BoxDecoration(
+            color: const Color.fromARGB(255, 206, 206, 206),
+            borderRadius: BorderRadius.circular(8),
+          ),
+          padding: const EdgeInsets.symmetric(horizontal: 12),
+          child: TextField(
+            controller: commentController,
+            style: const TextStyle(color: Color.fromARGB(255, 0, 0, 0)),
+            decoration: const InputDecoration(
+              labelText: 'Escribe un comentario',
+              labelStyle: TextStyle(color: Color.fromARGB(255, 22, 22, 22)),
+              border: InputBorder.none,
+            ),
+          ),
+        ),
         const SizedBox(height: 8),
         ElevatedButton(
           onPressed: () => _addComment(),

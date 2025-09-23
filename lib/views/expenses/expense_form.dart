@@ -47,9 +47,14 @@ class _ExpenseFormState extends State<ExpenseForm> {
     final loadedCategories = List<Map<String, dynamic>>.from(response);
 
     String? initialCategoryId;
-    if (widget.expense != null) {
-      initialCategoryId = widget.expense!['category_id']?.toString();
-    }
+    if (widget.expense != null && widget.expense!['categories'] != null) {
+  final categoryName = widget.expense!['categories']['name'];
+  final match = loadedCategories.firstWhere(
+    (cat) => cat['name'].toString().trim().toLowerCase() == categoryName.toString().trim().toLowerCase(),
+    orElse: () => {},
+  );
+  initialCategoryId = match.isNotEmpty ? match['id'].toString() : null;
+}
 
     setState(() {
       categoryOptions = loadedCategories;
