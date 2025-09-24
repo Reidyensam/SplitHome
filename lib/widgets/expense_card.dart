@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
-import 'package:splithome/views/groups/group_comments_section.dart';
-import '../../core/constants.dart';
+import 'package:splithome/widgets/formatters.dart';
 
 class ExpenseCard extends StatelessWidget {
   final Map<String, dynamic> expense;

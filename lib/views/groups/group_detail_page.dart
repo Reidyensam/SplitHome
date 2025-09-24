@@ -203,11 +203,11 @@ class _GroupDetailPageState extends State<GroupDetailPage>
       final expenseResponse = await client
           .from('expenses')
           .select('''
-    id, title, amount, date, user_id,
-    users!expenses_user_id_fkey(name),
-    editor:updated_by(name),
-    categories(name, icon, color)
-    ''')
+id, title, amount, date, user_id, receipt_url,
+users!expenses_user_id_fkey(name),
+editor:updated_by(name),
+categories(name, icon, color)
+''')
           .eq('group_id', widget.groupId)
           .order('date', ascending: false);
       print('📦 Miembros recibidos: $memberResponse');
@@ -336,6 +336,44 @@ class _GroupDetailPageState extends State<GroupDetailPage>
         context,
       ).showSnackBar(const SnackBar(content: Text('Error al agregar miembro')));
     }
+  }
+
+  void _mostrarComprobanteZoomable(String fileName) {
+    final url = Supabase.instance.client.storage
+        .from('receipts')
+        .getPublicUrl(fileName);
+
+    showDialog(
+      context: context,
+      builder: (context) => Dialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Padding(
+              padding: EdgeInsets.all(12),
+              child: Text(
+                'Comprobante',
+                style: TextStyle(fontWeight: FontWeight.bold),
+              ),
+            ),
+            SizedBox(
+              height: 300,
+              child: InteractiveViewer(
+                panEnabled: true,
+                minScale: 1,
+                maxScale: 4,
+                child: Image.network(url),
+              ),
+            ),
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('Cerrar'),
+            ),
+          ],
+        ),
+      ),
+    );
   }
 
   void _showAddMemberDialog() {
@@ -1225,12 +1263,34 @@ class _GroupDetailPageState extends State<GroupDetailPage>
                     Row(
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
-                        Text(
-                          e['title'],
-                          style: const TextStyle(
-                            fontSize: 15,
-                            color: AppColors.textPrimary,
-                          ),
+                        Row(
+                          children: [
+                            IconButton(
+                              icon: Icon(
+                                Icons.camera_alt,
+                                size: 18,
+                                color: e['receipt_url'] != null
+                                    ? Colors.blue
+                                    : Colors.grey,
+                              ),
+                              onPressed: e['receipt_url'] != null
+                                  ? () => _mostrarComprobanteZoomable(
+                                      e['receipt_url'],
+                                    )
+                                  : null,
+                              tooltip: e['receipt_url'] != null
+                                  ? 'Ver comprobante'
+                                  : 'Sin comprobante',
+                            ),
+                            const SizedBox(width: 4),
+                            Text(
+                              e['title'],
+                              style: const TextStyle(
+                                fontSize: 15,
+                                color: AppColors.textPrimary,
+                              ),
+                            ),
+                          ],
                         ),
                         Row(
                           children: [

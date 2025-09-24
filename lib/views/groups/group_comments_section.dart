@@ -1,22 +1,7 @@
 import 'package:flutter/material.dart';
+import 'package:splithome/widgets/formatters.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:intl/intl.dart';
-
-String formatearFecha(String isoDate, {String? updatedIso}) {
-  try {
-    final created = DateTime.parse(isoDate).toLocal();
-    final updated = updatedIso != null
-        ? DateTime.tryParse(updatedIso)?.toLocal()
-        : null;
-    final fecha = DateFormat('dd/MM/yyyy – HH:mm').format(created);
-    final editado = updated != null && updated.isAfter(created)
-        ? ' (editado)'
-        : '';
-    return '$fecha$editado';
-  } catch (e) {
-    return 'Fecha inválida';
-  }
-}
 
 class GroupCommentsSection extends StatefulWidget {
   final String groupId;
@@ -371,15 +356,15 @@ class _GroupCommentsSectionState extends State<GroupCommentsSection> {
                             ),
                             const SizedBox(height: 2),
                             Text(
-                              formatearFecha(
-                                r['created_at'],
-                                updatedIso: r['updated_at'],
-                              ),
-                              style: const TextStyle(
-                                fontSize: 12,
-                                color: Color.fromARGB(255, 180, 180, 180),
-                              ),
-                            ),
+  formatearFecha(
+    r['created_at'],
+    updatedIso: r['updated_at'],
+  ),
+  style: const TextStyle(
+    fontSize: 12,
+    color: Color.fromARGB(255, 180, 180, 180),
+  ),
+),
                             const SizedBox(height: 2),
                             isReplyEditing
                                 ? TextField(
