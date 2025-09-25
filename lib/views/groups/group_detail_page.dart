@@ -1,6 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:splithome/views/expenses/expense_form.dart';
 import 'package:splithome/views/groups/group_comments_section.dart';
+import 'package:splithome/widgets/budget_card.dart';
+import 'package:splithome/widgets/member_list.dart';
+import 'package:splithome/widgets/stats_section.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../core/constants.dart';
 import '../dashboard/user_expense_page.dart';
@@ -450,124 +453,42 @@ categories(name, icon, color)
               child: ListView(
                 padding: const EdgeInsets.all(16),
                 children: [
-                  _buildStatsSection(),
+                  StatsSection(
+                    expenses: expenses,
+                    members: members,
+                    balances: balances,
+                    showStatsDetails: showStatsDetails,
+                    onToggle: (expanded) =>
+                        setState(() => showStatsDetails = expanded),
+                  ),
                   const SizedBox(height: 1),
 
-                  _buildMemberList(),
-
-                  Card(
-                    elevation: 3,
-                    margin: const EdgeInsets.symmetric(vertical: 12),
-                    child: Padding(
-                      padding: const EdgeInsets.all(16),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Row(
-                            children: [
-                              const Icon(
-                                Icons.account_balance_wallet,
-                                color: Color.fromARGB(255, 11, 169, 218),
-                              ),
-                              const SizedBox(width: 8),
-                              Text(
-                                monthlyBudget > 0
-                                    ? 'Presupuesto mensual: Bs. ${monthlyBudget.toStringAsFixed(2)}'
-                                    : 'Presupuesto no establecido',
-                                style: const TextStyle(
-                                  fontWeight: FontWeight.bold,
-                                ),
-                              ),
-                              const Spacer(),
-                              if (currentUserRole == 'admin')
-                                IconButton(
-                                  icon: const Icon(
-                                    Icons.edit,
-                                    color: Color.fromARGB(255, 11, 169, 218),
-                                  ),
-                                  tooltip: monthlyBudget > 0
-                                      ? 'Editar presupuesto'
-                                      : 'Establecer presupuesto',
-                                  onPressed: _showEditBudgetDialog,
-                                ),
-                            ],
-                          ),
-                          if (monthlyBudget > 0) ...[
-                            const SizedBox(height: 12),
-                            LinearProgressIndicator(
-                              value: (total / monthlyBudget).clamp(0.0, 1.0),
-                              backgroundColor: Colors.grey[300],
-                              color: total >= monthlyBudget
-                                  ? Colors.red
-                                  : total >= monthlyBudget * 0.75
-                                  ? Colors.orange
-                                  : Colors.green,
-                              minHeight: 10,
-                            ),
-                            const SizedBox(height: 8),
-                            Row(
-                              children: [
-                                Icon(
-                                  total >= monthlyBudget
-                                      ? Icons.warning
-                                      : total >= monthlyBudget * 0.75
-                                      ? Icons.info
-                                      : Icons.check_circle,
-                                  color: total >= monthlyBudget
-                                      ? Colors.red
-                                      : total >= monthlyBudget * 0.75
-                                      ? Colors.orange
-                                      : Colors.green,
-                                ),
-                                const SizedBox(width: 8),
-                                Expanded(
-                                  child: Text(
-                                    total >= monthlyBudget
-                                        ? '⚠️ ¡Presupuesto mensual excedido!'
-                                        : total >= monthlyBudget * 0.75
-                                        ? '🔔 Estás alcanzando el presupuesto mensual'
-                                        : 'Presupuesto en curso',
-                                    style: TextStyle(
-                                      color: total >= monthlyBudget
-                                          ? Colors.red
-                                          : const Color.fromARGB(
-                                              221,
-                                              168,
-                                              168,
-                                              168,
-                                            ),
-                                      fontWeight: FontWeight.w500,
-                                    ),
-                                  ),
-                                ),
-                                Text(
-                                  'Usado: ${(total / monthlyBudget * 100).toStringAsFixed(1)}%',
-                                  style: const TextStyle(
-                                    fontWeight: FontWeight.w500,
-                                  ),
-                                ),
-                              ],
-                            ),
-                            const SizedBox(height: 6),
-                            Text(
-                              'Disponible: Bs. ${(monthlyBudget - total).clamp(0.0, monthlyBudget).toStringAsFixed(2)}',
-                              style: const TextStyle(
-                                fontWeight: FontWeight.w500,
-                              ),
-                            ),
-                          ] else ...[
-                            const SizedBox(height: 12),
-                            const Text(
-                              'Define un presupuesto mensual para activar el seguimiento.',
-                              style: TextStyle(
-                                color: Colors.orange,
-                                fontWeight: FontWeight.w500,
-                              ),
-                            ),
-                          ],
-                        ],
+                  MemberList(
+                    members: members,
+                    currentUserRole: currentUserRole,
+                    groupId: widget.groupId,
+                    onAddMember: _showAddMemberDialog,
+                    onViewExpenses: (memberId, name) => Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (context) => UserExpensePage(
+                          userId: memberId,
+                          userName: name,
+                          groupId: widget.groupId,
+                        ),
                       ),
                     ),
+                    onDeleteMember: _loadGroupDetails,
+                  ),
+
+                  BudgetCard(
+                    monthlyBudget: monthlyBudget,
+                    currentUserRole: currentUserRole,
+                    totalSpent: expenses.fold<double>(
+                      0,
+                      (sum, e) => sum + (e['amount'] as num).toDouble(),
+                    ),
+                    onEditBudget: _showEditBudgetDialog,
                   ),
 
                   const SizedBox(height: 5),
@@ -582,212 +503,6 @@ categories(name, icon, color)
                 ],
               ),
             ),
-    );
-  }
-
-  Widget _buildStatsSection() {
-    final double total = expenses.fold<double>(
-      0,
-      (sum, e) => sum + (e['amount'] as num).toDouble(),
-    );
-    final average = members.isNotEmpty ? total / members.length : 0;
-
-    final validUserIds = members.map((m) => m['user_id']).toSet();
-    final filteredBalances = Map.fromEntries(
-      balances.entries.where((e) => validUserIds.contains(e.key)),
-    );
-
-    final sorted = filteredBalances.entries.toList()
-      ..sort((a, b) => b.value.compareTo(a.value));
-    final topSpender = sorted.isNotEmpty ? sorted.first : null;
-    final lowestSpender = sorted.length > 1 ? sorted.last : null;
-
-    final memberStats = members.map((m) {
-      final userId = m['user_id'];
-      final userName = m['users']?['name'] ?? 'Sin nombre';
-      final userTotal = balances[userId] ?? 0.0;
-      final percent = total > 0 ? (userTotal / total * 100) : 0;
-      return {'name': userName, 'amount': userTotal, 'percentage': percent};
-    }).toList();
-
-    final highestSpender = topSpender != null
-        ? {
-            'name': members.firstWhere(
-              (m) => m['user_id'] == topSpender.key,
-            )['users']['name'],
-            'amount': topSpender.value,
-          }
-        : null;
-
-    final lowestSpenderData = lowestSpender != null
-        ? {
-            'name': members.firstWhere(
-              (m) => m['user_id'] == lowestSpender.key,
-            )['users']['name'],
-            'amount': lowestSpender.value,
-          }
-        : null;
-
-    final noSpenders = memberStats.where((m) => m['amount'] == 0).toList();
-
-    return Card(
-      margin: const EdgeInsets.symmetric(vertical: 8),
-      child: ExpansionTile(
-        initiallyExpanded: showStatsDetails,
-        onExpansionChanged: (expanded) {
-          setState(() => showStatsDetails = expanded);
-        },
-        leading: const Icon(Icons.bar_chart, color: AppColors.accent),
-        title: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                const Icon(Icons.attach_money, color: Colors.green),
-                const SizedBox(width: 8),
-                Text(
-                  'Total: Bs. ${total.toStringAsFixed(2)}',
-                  style: const TextStyle(fontWeight: FontWeight.bold),
-                ),
-              ],
-            ),
-
-            const SizedBox(height: 4),
-            Row(
-              children: [
-                const Icon(Icons.group, color: Colors.blue),
-                const SizedBox(width: 8),
-                Flexible(
-                  child: Text(
-                    'Promedio: Bs. ${average.toStringAsFixed(2)}',
-                    style: const TextStyle(fontWeight: FontWeight.bold),
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                ),
-              ],
-            ),
-          ],
-        ),
-        children: [
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const Divider(height: 24),
-                const Text(
-                  '📌 Contribuciones individuales',
-                  style: TextStyle(fontWeight: FontWeight.bold),
-                ),
-                const SizedBox(height: 8),
-                Table(
-                  columnWidths: const {
-                    0: FlexColumnWidth(2),
-                    1: FlexColumnWidth(1),
-                    2: FlexColumnWidth(1),
-                  },
-                  children: [
-                    const TableRow(
-                      children: [
-                        Text(
-                          'Nombre',
-                          style: TextStyle(fontWeight: FontWeight.bold),
-                        ),
-                        Text(
-                          'Bs.',
-                          style: TextStyle(fontWeight: FontWeight.bold),
-                        ),
-                        Text(
-                          '%',
-                          style: TextStyle(fontWeight: FontWeight.bold),
-                        ),
-                      ],
-                    ),
-                    ...memberStats.map(
-                      (member) => TableRow(
-                        children: [
-                          Padding(
-                            padding: const EdgeInsets.symmetric(vertical: 4),
-                            child: Text(member['name']),
-                          ),
-                          Padding(
-                            padding: const EdgeInsets.symmetric(vertical: 4),
-                            child: Text(member['amount'].toStringAsFixed(2)),
-                          ),
-                          Padding(
-                            padding: const EdgeInsets.symmetric(vertical: 4),
-                            child: Text(
-                              '${member['percentage'].toStringAsFixed(1)}%',
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 16),
-                Row(
-                  children: [
-                    const Icon(Icons.trending_up, color: Colors.orange),
-                    const SizedBox(width: 8),
-                    const Text(
-                      'Mayor gasto:',
-                      style: TextStyle(fontWeight: FontWeight.bold),
-                    ),
-                    const SizedBox(width: 8),
-                    if (highestSpender != null)
-                      Flexible(
-                        child: Text(
-                          '${highestSpender['name']} - Bs. ${highestSpender['amount'].toStringAsFixed(2)}',
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                      ),
-                  ],
-                ),
-                const SizedBox(height: 8),
-                Row(
-                  children: [
-                    const Icon(Icons.trending_down, color: Colors.redAccent),
-                    const SizedBox(width: 8),
-                    const Text(
-                      'Menor gasto:',
-                      style: TextStyle(fontWeight: FontWeight.bold),
-                    ),
-                    const SizedBox(width: 8),
-                    if (lowestSpenderData != null)
-                      Flexible(
-                        child: Text(
-                          '${lowestSpenderData['name']} - Bs. ${lowestSpenderData['amount'].toStringAsFixed(2)}',
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                      ),
-                  ],
-                ),
-                const SizedBox(height: 8),
-                if (noSpenders.isNotEmpty)
-                  Row(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      const Icon(Icons.block, color: Colors.grey),
-                      const SizedBox(width: 8),
-                      const Text(
-                        'Sin consumo:',
-                        style: TextStyle(fontWeight: FontWeight.bold),
-                      ),
-                      const SizedBox(width: 8),
-                      Expanded(
-                        child: Text(
-                          noSpenders.map((m) => m['name']).join(', '),
-                          softWrap: true,
-                        ),
-                      ),
-                    ],
-                  ),
-              ],
-            ),
-          ),
-        ],
-      ),
     );
   }
 
@@ -812,219 +527,6 @@ categories(name, icon, color)
 
       return matchesDate && matchesCategory && matchesMonth;
     }).toList();
-  }
-
-  Widget _buildMemberList() {
-    final currentUserId = Supabase.instance.client.auth.currentUser?.id;
-
-    return Card(
-      margin: const EdgeInsets.symmetric(vertical: 8),
-      child: ExpansionTile(
-        initiallyExpanded: false,
-        onExpansionChanged: (expanded) {
-          setState(() => showMembersExpanded = expanded);
-        },
-        leading: const Icon(Icons.group_outlined, color: AppColors.primary),
-        title: Align(
-          alignment: Alignment.centerLeft,
-          child: Text(
-            'Miembros del grupo (${members.length})',
-            style: const TextStyle(
-              fontSize: 17,
-              fontWeight: FontWeight.w600,
-              color: Colors.white,
-            ),
-          ),
-        ),
-        trailing: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            if (currentUserRole == 'admin' || currentUserRole == 'super_admin')
-              IconButton(
-                icon: const Icon(Icons.person_add, color: AppColors.primary),
-                tooltip: 'Agregar miembro',
-                onPressed: _showAddMemberDialog,
-              ),
-            Icon(
-              showMembersExpanded ? Icons.expand_less : Icons.expand_more,
-              color: Colors.white,
-            ),
-          ],
-        ),
-        children: [
-          const SizedBox(height: 10),
-          if (members.isEmpty)
-            const Padding(
-              padding: EdgeInsets.all(12),
-              child: Text(
-                'No hay miembros registrados.',
-                style: TextStyle(color: Colors.grey),
-              ),
-            )
-          else
-            ...members.map((m) {
-              final user = m['users'] ?? {};
-              final name = user['name'] ?? 'Sin nombre';
-              final email = user['email'] ?? 'Sin correo';
-              final role = m['role'] ?? 'Sin rol';
-              final memberId = m['user_id'];
-
-              final isAdmin =
-                  currentUserRole == 'admin' ||
-                  currentUserRole == 'super_admin';
-              final isSelf = currentUserId != null && memberId == currentUserId;
-
-              return Card(
-                margin: const EdgeInsets.symmetric(vertical: 6),
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 12,
-                    vertical: 8,
-                  ),
-                  child: Row(
-                    children: [
-                      const Icon(Icons.person_outline, size: 25),
-                      const SizedBox(width: 10),
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(name, style: const TextStyle(fontSize: 15)),
-                            Text(
-                              '$email • Rol: $role',
-                              style: const TextStyle(
-                                fontSize: 13,
-                                color: AppColors.textSecondary,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                      IconButton(
-                        icon: const Icon(Icons.receipt_long, size: 23),
-                        tooltip: 'Ver gastos',
-                        onPressed: () {
-                          Navigator.push(
-                            context,
-                            MaterialPageRoute(
-                              builder: (context) => UserExpensePage(
-                                userId: memberId,
-                                userName: name,
-                                groupId: widget.groupId,
-                              ),
-                            ),
-                          );
-                        },
-                      ),
-                      if (isAdmin && !isSelf)
-                        IconButton(
-                          icon: const Icon(
-                            Icons.delete,
-                            size: 23,
-                            color: Colors.redAccent,
-                          ),
-                          tooltip: 'Eliminar miembro',
-                          onPressed: () async {
-                            final confirmed = await showDialog<bool>(
-                              context: context,
-                              builder: (dialogContext) => AlertDialog(
-                                title: const Text('¿Eliminar miembro?'),
-                                content: const Text(
-                                  'Esta acción no se puede deshacer. ¿Estás seguro de que deseas eliminar este miembro?',
-                                ),
-                                actions: [
-                                  TextButton(
-                                    onPressed: () =>
-                                        Navigator.pop(dialogContext, false),
-                                    child: const Text('Cancelar'),
-                                  ),
-                                  TextButton(
-                                    onPressed: () =>
-                                        Navigator.pop(dialogContext, true),
-                                    child: const Text('Eliminar'),
-                                  ),
-                                ],
-                              ),
-                            );
-
-                            if (confirmed != true) return;
-
-                            final targetUserId = m['user_id']?.toString();
-                            final groupId = widget.groupId?.toString();
-
-                            if (groupId == null ||
-                                groupId.isEmpty ||
-                                targetUserId == null ||
-                                targetUserId.isEmpty) {
-                              ScaffoldMessenger.of(context).showSnackBar(
-                                const SnackBar(
-                                  content: Text(
-                                    '⚠️ No se puede eliminar: datos inválidos.',
-                                  ),
-                                ),
-                              );
-                              return;
-                            }
-
-                            print(
-                              '🧾 Eliminando user_id=$targetUserId del grupo=$groupId',
-                            );
-
-                            try {
-                              await Supabase.instance.client
-                                  .from('group_members')
-                                  .delete()
-                                  .match({
-                                    'group_id': groupId,
-                                    'user_id': targetUserId,
-                                  });
-
-                              final check = await Supabase.instance.client
-                                  .from('group_members')
-                                  .select()
-                                  .eq('group_id', groupId)
-                                  .eq('user_id', targetUserId);
-
-                              if (check.isEmpty) {
-                                setState(() {
-                                  members.removeWhere(
-                                    (m) =>
-                                        m['user_id']?.toString() ==
-                                        targetUserId,
-                                  );
-                                });
-
-                                ScaffoldMessenger.of(context).showSnackBar(
-                                  const SnackBar(
-                                    content: Text('✅ Miembro eliminado'),
-                                  ),
-                                );
-                              } else {
-                                ScaffoldMessenger.of(context).showSnackBar(
-                                  const SnackBar(
-                                    content: Text(
-                                      '⚠️ No tienes permiso para eliminar este miembro.',
-                                    ),
-                                  ),
-                                );
-                              }
-                            } catch (e) {
-                              ScaffoldMessenger.of(context).showSnackBar(
-                                SnackBar(
-                                  content: Text('❌ Error al eliminar: $e'),
-                                ),
-                              );
-                            }
-                          },
-                        ),
-                    ],
-                  ),
-                ),
-              );
-            }).toList(),
-        ],
-      ),
-    );
   }
 
   Widget _buildExpenseList() {

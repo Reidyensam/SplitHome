@@ -11,7 +11,6 @@ import 'package:splithome/views/groups/group_detail_page.dart';
 import 'package:splithome/views/super_admin/promote_user_page.dart';
 import 'package:splithome/views/groups/group_setup_page.dart';
 import 'package:splithome/views/notifications/notification_page.dart';
-import 'package:splithome/views/notifications/invitation_inbox_page.dart';
 
 
 Future<void> main() async {
@@ -52,7 +51,6 @@ class SplitHomeApp extends StatelessWidget {
       routes: {
         '/login': (context) => const LoginPage(),
         '/dashboard': (context) => const DashboardPage(),
-        '/invitaciones': (context) => const InvitationInboxPage(),
         '/notificaciones': (context) => const NotificationPage(),
         '/register': (context) => const RegisterPage(),
         '/promote_user': (context) => const PromoteUserPage(),
