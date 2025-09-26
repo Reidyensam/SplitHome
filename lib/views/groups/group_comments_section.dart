@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
-import 'package:splithome/widgets/formatters.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
-import 'package:intl/intl.dart';
+import 'package:splithome/widgets/formatters.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 class GroupCommentsSection extends StatefulWidget {
   final String groupId;
@@ -25,6 +25,10 @@ class _GroupCommentsSectionState extends State<GroupCommentsSection> {
   final TextEditingController editController = TextEditingController();
   final Map<String, TextEditingController> replyControllers = {};
   String? editingCommentId;
+  int unreadCount = 0;
+  bool showCommentsExpanded = true;
+  DateTime lastSeen = DateTime.fromMillisecondsSinceEpoch(0);
+  Map<String, bool> showNewTag = {};
 
   Widget _buildContentWithMentions(String content, {bool isRoot = false}) {
     final words = content.split(' ');
@@ -55,8 +59,13 @@ class _GroupCommentsSectionState extends State<GroupCommentsSection> {
         .order('created_at');
 
     if (mounted) {
+      final loaded = List<Map<String, dynamic>>.from(response);
       setState(() {
-        comments = List<Map<String, dynamic>>.from(response);
+        comments = loaded;
+
+        unreadCount = comments
+            .where((c) => DateTime.parse(c['created_at']).isAfter(lastSeen))
+            .length;
       });
     }
   }
@@ -76,6 +85,7 @@ class _GroupCommentsSectionState extends State<GroupCommentsSection> {
       'content': content,
       'parent_id': parentId,
       'created_at': DateTime.now().toUtc().toIso8601String(),
+      'read': false,
     });
 
     controller.clear();
@@ -142,7 +152,30 @@ class _GroupCommentsSectionState extends State<GroupCommentsSection> {
   @override
   void initState() {
     super.initState();
-    _loadComments();
+    _loadLastSeenAndComments();
+
+    Supabase.instance.client
+        .channel('group_comments_channel')
+        .onPostgresChanges(
+          event: PostgresChangeEvent.all,
+          schema: 'public',
+          table: 'group_comments',
+          callback: (payload) {
+            _loadComments();
+          },
+        )
+        .subscribe();
+  }
+
+  void _loadLastSeenAndComments() async {
+    final prefs = await SharedPreferences.getInstance();
+    final stored = prefs.getString(
+      'lastSeen_${widget.groupId}_${widget.month}_${widget.year}',
+    );
+    if (stored != null) {
+      lastSeen = DateTime.parse(stored);
+    }
+    await _loadComments();
   }
 
   @override
@@ -166,270 +199,345 @@ class _GroupCommentsSectionState extends State<GroupCommentsSection> {
   @override
   Widget build(BuildContext context) {
     final currentUserId = Supabase.instance.client.auth.currentUser?.id;
-    final rootComments = comments.where((c) => c['parent_id'] == null).toList();
+    final rootComments = comments.where((c) => c['parent_id'] == null).toList()
+      ..sort((a, b) => b['created_at'].compareTo(a['created_at']));
     final replies = comments.where((c) => c['parent_id'] != null).toList();
 
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        const Text(
-          '💬 Comentarios',
-          style: TextStyle(
-            fontSize: 18,
-            fontWeight: FontWeight.bold,
-            color: Color.fromARGB(255, 190, 190, 190),
-          ),
-        ),
-        const SizedBox(height: 12),
+    return Card(
+      margin: const EdgeInsets.symmetric(vertical: 8),
+      child: ExpansionTile(
+        initiallyExpanded: false,
+        onExpansionChanged: (expanded) async {
+          setState(() {
+            showCommentsExpanded = expanded;
+            if (expanded) {
+              lastSeen = DateTime.now();
+              unreadCount = 0;
+            }
+          });
 
-        if (rootComments.isEmpty)
-          Padding(
-            padding: const EdgeInsets.symmetric(vertical: 16),
-            child: Text(
-              'No hay comentarios 💤',
-              style: TextStyle(color: Colors.grey[600]),
-            ),
-          ),
-
-        ...rootComments.map((c) {
-          final isOwner = c['user_id'] == currentUserId;
-          final isEditing = editingCommentId == c['id'];
-          final commentReplies = replies
-              .where((r) => r['parent_id'] == c['id'])
-              .toList();
-          final nombre = c['users']['name'] ?? 'Usuario';
-          final color =
-              Colors.primaries[nombre.hashCode % Colors.primaries.length];
-          replyControllers.putIfAbsent(c['id'], () => TextEditingController());
-
-          return Card(
-            elevation: 3,
-            margin: const EdgeInsets.symmetric(vertical: 8),
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(12),
-            ),
-            child: Padding(
-              padding: const EdgeInsets.all(12),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    children: [
-                      CircleAvatar(
-                        backgroundColor: color,
-                        child: Text(
-                          nombre[0].toUpperCase(),
-                          style: const TextStyle(color: Colors.white),
-                        ),
-                      ),
-                      const SizedBox(width: 8),
-                      Expanded(
-                        child: Text(
-                          nombre,
-                          style: TextStyle(
-                            fontWeight: FontWeight.bold,
-                            color: color,
-                          ),
-                        ),
-                      ),
-                      if (isOwner)
-                        Row(
-                          children: [
-                            if (!isEditing)
-                              IconButton(
-                                icon: const Icon(Icons.edit, size: 20),
-                                onPressed: () {
-                                  if (mounted) {
-                                    setState(() {
-                                      editingCommentId = c['id'];
-                                      editController.text = c['content'];
-                                    });
-                                  }
-                                },
-                              ),
-                            if (isEditing)
-                              IconButton(
-                                icon: const Icon(Icons.check, size: 20),
-                                onPressed: () => _updateComment(c['id']),
-                              ),
-                            IconButton(
-                              icon: const Icon(Icons.delete, size: 20),
-                              color: Colors.red,
-                              onPressed: () => _confirmDelete(c['id']),
-                            ),
-                          ],
-                        ),
-                    ],
-                  ),
-                  const SizedBox(height: 4),
-                  Text(
-                    formatearFecha(
-                      c['created_at'],
-                      updatedIso: c['updated_at'],
-                    ),
-                    style: const TextStyle(
-                      fontSize: 13,
-                      color: Color.fromARGB(255, 216, 216, 216),
-                    ),
-                  ),
-                  const SizedBox(height: 4),
-                  isEditing
-                      ? TextField(
-                          controller: editController,
-                          decoration: const InputDecoration(
-                            labelText: 'Editar comentario',
-                          ),
-                        )
-                      : _buildContentWithMentions(c['content'], isRoot: true),
-                  const SizedBox(height: 8),
-
-                  ...commentReplies.map((r) {
-                    final isReplyOwner = r['user_id'] == currentUserId;
-                    final isReplyEditing = editingCommentId == r['id'];
-                    final nombreR = r['users']['name'] ?? 'Usuario';
-                    final colorR = Colors
-                        .primaries[nombreR.hashCode % Colors.primaries.length];
-
-                    return Padding(
-                      padding: const EdgeInsets.only(left: 16, top: 8),
-                      child: Container(
-                        decoration: BoxDecoration(
-                          color: Theme.of(context).brightness == Brightness.dark
-                              ? const Color.fromARGB(255, 37, 37, 37)
-                              : Colors.grey[200],
-                          borderRadius: BorderRadius.circular(8),
-                        ),
-                        padding: const EdgeInsets.all(8),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Row(
-                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                              children: [
-                                Text(
-                                  nombreR,
-                                  style: TextStyle(
-                                    fontWeight: FontWeight.w500,
-                                    color: colorR,
-                                  ),
-                                ),
-                                if (isReplyOwner)
-                                  Row(
-                                    children: [
-                                      if (!isReplyEditing)
-                                        IconButton(
-                                          icon: const Icon(
-                                            Icons.edit,
-                                            size: 18,
-                                          ),
-                                          onPressed: () {
-                                            if (mounted) {
-                                              setState(() {
-                                                editingCommentId = r['id'];
-                                                editController.text =
-                                                    r['content'];
-                                              });
-                                            }
-                                          },
-                                        ),
-                                      if (isReplyEditing)
-                                        IconButton(
-                                          icon: const Icon(
-                                            Icons.check,
-                                            size: 18,
-                                          ),
-                                          onPressed: () =>
-                                              _updateComment(r['id']),
-                                        ),
-                                      IconButton(
-                                        icon: const Icon(
-                                          Icons.delete,
-                                          size: 18,
-                                          color: Colors.red,
-                                        ),
-                                        onPressed: () =>
-                                            _confirmDelete(r['id']),
-                                      ),
-                                    ],
-                                  ),
-                              ],
-                            ),
-                            const SizedBox(height: 2),
-                            Text(
-  formatearFecha(
-    r['created_at'],
-    updatedIso: r['updated_at'],
-  ),
-  style: const TextStyle(
-    fontSize: 12,
-    color: Color.fromARGB(255, 180, 180, 180),
-  ),
-),
-                            const SizedBox(height: 2),
-                            isReplyEditing
-                                ? TextField(
-                                    controller: editController,
-                                    decoration: const InputDecoration(
-                                      labelText: 'Editar respuesta',
-                                    ),
-                                  )
-                                : _buildContentWithMentions(r['content']),
-                          ],
-                        ),
-                      ),
-                    );
-                  }),
-
-                  const SizedBox(height: 1),
-                  TextField(
-                    controller: replyControllers[c['id']],
-                    decoration: const InputDecoration(
-                      labelText: 'Responder...',
-                    ),
-                  ),
-                  Align(
-                    alignment: Alignment.centerRight,
-                    child: TextButton(
-                      onPressed: () => _addComment(parentId: c['id']),
-                      child: const Text('Responder'),
-                    ),
-                  ),
-                ],
+          if (expanded) {
+            final prefs = await SharedPreferences.getInstance();
+            await prefs.setString(
+              'lastSeen_${widget.groupId}_${widget.month}_${widget.year}',
+              lastSeen.toIso8601String(),
+            );
+          }
+        },
+        leading: const Icon(Icons.comment_outlined, color: Colors.white),
+        title: Row(
+          children: [
+            const Text(
+              'Comentarios',
+              style: TextStyle(
+                fontSize: 17,
+                fontWeight: FontWeight.w600,
+                color: Colors.white,
               ),
             ),
-          );
-        }),
-
-        const Divider(height: 18),
-        Container(
-          decoration: BoxDecoration(
-            color: const Color.fromARGB(255, 206, 206, 206),
-            borderRadius: BorderRadius.circular(8),
-          ),
-          padding: const EdgeInsets.symmetric(horizontal: 12),
-          child: TextField(
-            controller: commentController,
-            style: const TextStyle(color: Color.fromARGB(255, 0, 0, 0)),
-            decoration: const InputDecoration(
-              labelText: 'Escribe un comentario',
-              labelStyle: TextStyle(color: Color.fromARGB(255, 22, 22, 22)),
-              border: InputBorder.none,
-            ),
-          ),
+            const SizedBox(width: 8),
+            if (unreadCount > 0)
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                decoration: BoxDecoration(
+                  color: Colors.redAccent,
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Text(
+                  '$unreadCount',
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 12,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+              ),
+          ],
         ),
-        const SizedBox(height: 8),
-        ElevatedButton(
-          onPressed: () => _addComment(),
-          style: ElevatedButton.styleFrom(
-            backgroundColor: const Color.fromARGB(255, 37, 61, 197),
-            foregroundColor: Colors.white,
-            shape: RoundedRectangleBorder(
+        children: [
+          const SizedBox(height: 12),
+          if (rootComments.isEmpty)
+            const Padding(
+              padding: EdgeInsets.symmetric(vertical: 16),
+              child: Text(
+                'No hay comentarios aún. Sé el primero en comentar.',
+                style: TextStyle(color: Colors.grey),
+              ),
+            )
+          else
+            ...rootComments.map((c) {
+              final isOwner = c['user_id'] == currentUserId;
+              final isEditing = editingCommentId == c['id'];
+              final commentReplies =
+                  replies.where((r) => r['parent_id'] == c['id']).toList()
+                    ..sort(
+                      (a, b) => a['created_at'].compareTo(b['created_at']),
+                    );
+              final nombre = c['users']['name'] ?? 'Usuario';
+              final color =
+                  Colors.primaries[nombre.hashCode % Colors.primaries.length];
+              replyControllers.putIfAbsent(
+                c['id'],
+                () => TextEditingController(),
+              );
+
+              return Card(
+                elevation: 3,
+                margin: const EdgeInsets.symmetric(vertical: 8),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Padding(
+                  padding: const EdgeInsets.all(12),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          CircleAvatar(
+                            backgroundColor: color,
+                            child: Text(
+                              nombre[0].toUpperCase(),
+                              style: const TextStyle(color: Colors.white),
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: Row(
+                              children: [
+                                Text(
+                                  nombre,
+                                  style: TextStyle(
+                                    fontWeight: FontWeight.bold,
+                                    color: color,
+                                  ),
+                                ),
+                                const SizedBox(width: 6),
+                                AnimatedOpacity(
+                                  opacity:
+                                      DateTime.parse(
+                                        c['created_at'],
+                                      ).isAfter(lastSeen)
+                                      ? 1.0
+                                      : 0.0,
+                                  duration: const Duration(milliseconds: 600),
+                                  child: Container(
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 6,
+                                      vertical: 2,
+                                    ),
+                                    decoration: BoxDecoration(
+                                      color: Colors.orange,
+                                      borderRadius: BorderRadius.circular(8),
+                                    ),
+                                    child: const Text(
+                                      'Nuevo',
+                                      style: TextStyle(
+                                        color: Colors.white,
+                                        fontSize: 11,
+                                        fontWeight: FontWeight.bold,
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                          if (isOwner)
+                            Row(
+                              children: [
+                                if (!isEditing)
+                                  IconButton(
+                                    icon: const Icon(Icons.edit, size: 20),
+                                    onPressed: () {
+                                      if (mounted) {
+                                        setState(() {
+                                          editingCommentId = c['id'];
+                                          editController.text = c['content'];
+                                        });
+                                      }
+                                    },
+                                  ),
+                                if (isEditing)
+                                  IconButton(
+                                    icon: const Icon(Icons.check, size: 20),
+                                    onPressed: () => _updateComment(c['id']),
+                                  ),
+                                IconButton(
+                                  icon: const Icon(Icons.delete, size: 20),
+                                  color: Colors.red,
+                                  onPressed: () => _confirmDelete(c['id']),
+                                ),
+                              ],
+                            ),
+                        ],
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        formatearFecha(
+                          c['created_at'],
+                          updatedIso: c['updated_at'],
+                        ),
+                        style: const TextStyle(
+                          fontSize: 13,
+                          color: Color.fromARGB(255, 216, 216, 216),
+                        ),
+                      ),
+                      const SizedBox(height: 4),
+                      isEditing
+                          ? TextField(
+                              controller: editController,
+                              decoration: const InputDecoration(
+                                labelText: 'Editar comentario',
+                              ),
+                            )
+                          : _buildContentWithMentions(
+                              c['content'],
+                              isRoot: true,
+                            ),
+                      const SizedBox(height: 8),
+                      ...commentReplies.map((r) {
+                        final isReplyOwner = r['user_id'] == currentUserId;
+                        final isReplyEditing = editingCommentId == r['id'];
+                        final nombreR = r['users']['name'] ?? 'Usuario';
+
+                        final colorR =
+                            Colors.primaries[nombreR.hashCode %
+                                Colors.primaries.length];
+
+                        return Padding(
+                          padding: const EdgeInsets.only(left: 16, top: 8),
+                          child: Container(
+                            decoration: BoxDecoration(
+                              color:
+                                  Theme.of(context).brightness ==
+                                      Brightness.dark
+                                  ? const Color.fromARGB(255, 37, 37, 37)
+                                  : Colors.grey[200],
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                            padding: const EdgeInsets.all(8),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Row(
+                                  children: [
+                                    Text(
+                                      nombreR,
+                                      style: TextStyle(
+                                        fontWeight: FontWeight.w500,
+                                        color: colorR,
+                                      ),
+                                    ),
+                                    const SizedBox(width: 6),
+                                    AnimatedOpacity(
+                                      opacity:
+                                          DateTime.parse(
+                                            r['created_at'],
+                                          ).isAfter(lastSeen)
+                                          ? 1.0
+                                          : 0.0,
+                                      duration: const Duration(
+                                        milliseconds: 600,
+                                      ),
+                                      child: Container(
+                                        padding: const EdgeInsets.symmetric(
+                                          horizontal: 6,
+                                          vertical: 2,
+                                        ),
+                                        decoration: BoxDecoration(
+                                          color: Colors.orange,
+                                          borderRadius: BorderRadius.circular(
+                                            8,
+                                          ),
+                                        ),
+                                        child: const Text(
+                                          'Nuevo',
+                                          style: TextStyle(
+                                            color: Colors.white,
+                                            fontSize: 11,
+                                            fontWeight: FontWeight.bold,
+                                          ),
+                                        ),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                                const SizedBox(height: 2),
+                                Text(
+                                  formatearFecha(
+                                    r['created_at'],
+                                    updatedIso: r['updated_at'],
+                                  ),
+                                  style: const TextStyle(
+                                    fontSize: 12,
+                                    color: Color.fromARGB(255, 180, 180, 180),
+                                  ),
+                                ),
+                                const SizedBox(height: 2),
+                                isReplyEditing
+                                    ? TextField(
+                                        controller: editController,
+                                        decoration: const InputDecoration(
+                                          labelText: 'Editar respuesta',
+                                        ),
+                                      )
+                                    : _buildContentWithMentions(r['content']),
+                              ],
+                            ),
+                          ),
+                        );
+                      }),
+                      const SizedBox(height: 1),
+                      TextField(
+                        controller: replyControllers[c['id']],
+                        decoration: const InputDecoration(
+                          labelText: 'Responder...',
+                        ),
+                      ),
+                      Align(
+                        alignment: Alignment.centerRight,
+                        child: TextButton(
+                          onPressed: () => _addComment(parentId: c['id']),
+                          child: const Text('Responder'),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              );
+            }).toList(),
+          const Divider(height: 18),
+          Container(
+            decoration: BoxDecoration(
+              color: const Color.fromARGB(255, 206, 206, 206),
               borderRadius: BorderRadius.circular(8),
             ),
+            padding: const EdgeInsets.symmetric(horizontal: 12),
+            child: TextField(
+              controller: commentController,
+              style: const TextStyle(color: Color.fromARGB(255, 0, 0, 0)),
+              decoration: const InputDecoration(
+                labelText: 'Escribe un comentario',
+                labelStyle: TextStyle(color: Color.fromARGB(255, 22, 22, 22)),
+                border: InputBorder.none,
+              ),
+            ),
           ),
-          child: const Text('Enviar'),
-        ),
-      ],
+          const SizedBox(height: 8),
+          ElevatedButton(
+            onPressed: () => _addComment(),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: const Color.fromARGB(255, 37, 61, 197),
+              foregroundColor: Colors.white,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(8),
+              ),
+            ),
+            child: const Text('Enviar'),
+          ),
+        ],
+      ),
     );
   }
 }

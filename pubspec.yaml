@@ -20,7 +20,7 @@ dependencies:
   path_provider: ^2.0.14
   flutter_image_compress: ^2.1.0
   image_picker: ^1.0.4
-
+  shared_preferences: ^2.2.2 
 
 
 
