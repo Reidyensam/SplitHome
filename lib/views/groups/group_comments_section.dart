@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:splithome/widgets/formatters.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'dart:async';
 
 class GroupCommentsSection extends StatefulWidget {
   final String groupId;
@@ -29,6 +30,7 @@ class _GroupCommentsSectionState extends State<GroupCommentsSection> {
   bool showCommentsExpanded = true;
   DateTime lastSeen = DateTime.fromMillisecondsSinceEpoch(0);
   Map<String, bool> showNewTag = {};
+  final Set<String> alreadyTagged = {};
 
   Widget _buildContentWithMentions(String content, {bool isRoot = false}) {
     final words = content.split(' ');
@@ -39,8 +41,10 @@ class _GroupCommentsSectionState extends State<GroupCommentsSection> {
           return TextSpan(
             text: '$word ',
             style: TextStyle(
-              fontSize: isRoot ? 16 : 14,
-              color: isMention ? const Color.fromARGB(255, 165, 61, 206) : null,
+              fontSize: isRoot ? 17 : 14,
+              color: isMention
+                  ? const Color.fromARGB(255, 165, 61, 206)
+                  : const Color.fromARGB(255, 223, 223, 223),
               fontWeight: isMention ? FontWeight.bold : null,
             ),
           );
@@ -60,12 +64,29 @@ class _GroupCommentsSectionState extends State<GroupCommentsSection> {
 
     if (mounted) {
       final loaded = List<Map<String, dynamic>>.from(response);
+
       setState(() {
         comments = loaded;
-
         unreadCount = comments
             .where((c) => DateTime.parse(c['created_at']).isAfter(lastSeen))
             .length;
+
+        for (final c in loaded) {
+          final id = c['id'] as String;
+          final isNew = DateTime.parse(c['created_at']).isAfter(lastSeen);
+          if (isNew && showNewTag[id] != true && !alreadyTagged.contains(id)) {
+  showNewTag[id] = true;
+  alreadyTagged.add(id);
+
+  Timer(const Duration(seconds: 5), () {
+    if (mounted) {
+      setState(() {
+        showNewTag[id] = false;
+      });
+    }
+  });
+}
+        }
       });
     }
   }
@@ -85,7 +106,6 @@ class _GroupCommentsSectionState extends State<GroupCommentsSection> {
       'content': content,
       'parent_id': parentId,
       'created_at': DateTime.now().toUtc().toIso8601String(),
-      'read': false,
     });
 
     controller.clear();
@@ -199,10 +219,12 @@ class _GroupCommentsSectionState extends State<GroupCommentsSection> {
   @override
   Widget build(BuildContext context) {
     final currentUserId = Supabase.instance.client.auth.currentUser?.id;
+    final isAdmin =
+        Supabase.instance.client.auth.currentUser?.userMetadata?['role'] ==
+        'admin';
     final rootComments = comments.where((c) => c['parent_id'] == null).toList()
       ..sort((a, b) => b['created_at'].compareTo(a['created_at']));
     final replies = comments.where((c) => c['parent_id'] != null).toList();
-
     return Card(
       margin: const EdgeInsets.symmetric(vertical: 8),
       child: ExpansionTile(
@@ -314,10 +336,7 @@ class _GroupCommentsSectionState extends State<GroupCommentsSection> {
                                 ),
                                 const SizedBox(width: 6),
                                 AnimatedOpacity(
-                                  opacity:
-                                      DateTime.parse(
-                                        c['created_at'],
-                                      ).isAfter(lastSeen)
+                                  opacity: showNewTag[c['id']] == true
                                       ? 1.0
                                       : 0.0,
                                   duration: const Duration(milliseconds: 600),
@@ -399,6 +418,7 @@ class _GroupCommentsSectionState extends State<GroupCommentsSection> {
                       ...commentReplies.map((r) {
                         final isReplyOwner = r['user_id'] == currentUserId;
                         final isReplyEditing = editingCommentId == r['id'];
+                        final canEditOrDeleteReply = isReplyOwner || isAdmin;
                         final nombreR = r['users']['name'] ?? 'Usuario';
 
                         final colorR =
@@ -421,60 +441,109 @@ class _GroupCommentsSectionState extends State<GroupCommentsSection> {
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
                                 Row(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
                                   children: [
-                                    Text(
-                                      nombreR,
-                                      style: TextStyle(
-                                        fontWeight: FontWeight.w500,
-                                        color: colorR,
+                                    Expanded(
+                                      child: Column(
+                                        crossAxisAlignment:
+                                            CrossAxisAlignment.start,
+                                        children: [
+                                          Row(
+  children: [
+    Text(
+      nombreR,
+      style: TextStyle(
+        fontWeight: FontWeight.w500,
+        color: colorR,
+      ),
+    ),
+    const SizedBox(width: 6),
+    if (showNewTag[r['id']] == true)
+      AnimatedOpacity(
+        opacity: 1.0,
+        duration: const Duration(milliseconds: 600),
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+          decoration: BoxDecoration(
+            color: Colors.orange,
+            borderRadius: BorderRadius.circular(8),
+          ),
+          child: const Text(
+            'Nuevo',
+            style: TextStyle(
+              color: Colors.white,
+              fontSize: 11,
+              fontWeight: FontWeight.bold,
+            ),
+          ),
+        ),
+      ),
+  ],
+),
+                                          const SizedBox(height: 2),
+                                          Text(
+                                            formatearFecha(
+                                              r['created_at'],
+                                              updatedIso: r['updated_at'],
+                                            ),
+                                            style: const TextStyle(
+                                              fontSize: 12,
+                                              color: Color.fromARGB(
+                                                255,
+                                                180,
+                                                180,
+                                                180,
+                                              ),
+                                            ),
+                                          ),
+                                        ],
                                       ),
                                     ),
-                                    const SizedBox(width: 6),
-                                    AnimatedOpacity(
-                                      opacity:
-                                          DateTime.parse(
-                                            r['created_at'],
-                                          ).isAfter(lastSeen)
-                                          ? 1.0
-                                          : 0.0,
-                                      duration: const Duration(
-                                        milliseconds: 600,
-                                      ),
-                                      child: Container(
-                                        padding: const EdgeInsets.symmetric(
-                                          horizontal: 6,
-                                          vertical: 2,
-                                        ),
-                                        decoration: BoxDecoration(
-                                          color: Colors.orange,
-                                          borderRadius: BorderRadius.circular(
-                                            8,
+                                    Row(
+                                      mainAxisSize: MainAxisSize.min,
+                                      children: [
+                                        if (canEditOrDeleteReply &&
+                                            !isReplyEditing)
+                                          IconButton(
+                                            icon: const Icon(
+                                              Icons.edit,
+                                              size: 18,
+                                            ),
+                                            onPressed: () {
+                                              if (mounted) {
+                                                setState(() {
+                                                  editingCommentId = r['id'];
+                                                  editController.text =
+                                                      r['content'];
+                                                });
+                                              }
+                                            },
                                           ),
-                                        ),
-                                        child: const Text(
-                                          'Nuevo',
-                                          style: TextStyle(
-                                            color: Colors.white,
-                                            fontSize: 11,
-                                            fontWeight: FontWeight.bold,
+                                        if (canEditOrDeleteReply &&
+                                            isReplyEditing)
+                                          IconButton(
+                                            icon: const Icon(
+                                              Icons.check,
+                                              size: 18,
+                                            ),
+                                            onPressed: () =>
+                                                _updateComment(r['id']),
                                           ),
-                                        ),
-                                      ),
+                                        if (canEditOrDeleteReply)
+                                          IconButton(
+                                            icon: const Icon(
+                                              Icons.delete,
+                                              size: 18,
+                                            ),
+                                            color: Colors.red,
+                                            onPressed: () =>
+                                                _confirmDelete(r['id']),
+                                          ),
+                                      ],
                                     ),
                                   ],
                                 ),
-                                const SizedBox(height: 2),
-                                Text(
-                                  formatearFecha(
-                                    r['created_at'],
-                                    updatedIso: r['updated_at'],
-                                  ),
-                                  style: const TextStyle(
-                                    fontSize: 12,
-                                    color: Color.fromARGB(255, 180, 180, 180),
-                                  ),
-                                ),
-                                const SizedBox(height: 2),
+                                const SizedBox(height: 4),
                                 isReplyEditing
                                     ? TextField(
                                         controller: editController,
