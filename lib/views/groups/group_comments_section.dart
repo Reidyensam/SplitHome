@@ -8,12 +8,14 @@ class GroupCommentsSection extends StatefulWidget {
   final String groupId;
   final int month;
   final int year;
+  final String? highlightCommentId;
 
   const GroupCommentsSection({
-    super.key,
     required this.groupId,
     required this.month,
     required this.year,
+    this.highlightCommentId,
+    super.key,
   });
 
   @override
@@ -21,6 +23,8 @@ class GroupCommentsSection extends StatefulWidget {
 }
 
 class _GroupCommentsSectionState extends State<GroupCommentsSection> {
+  bool isSending = false;
+
   List<Map<String, dynamic>> comments = [];
   final TextEditingController commentController = TextEditingController();
   final TextEditingController editController = TextEditingController();
@@ -31,6 +35,33 @@ class _GroupCommentsSectionState extends State<GroupCommentsSection> {
   DateTime lastSeen = DateTime.fromMillisecondsSinceEpoch(0);
   Map<String, bool> showNewTag = {};
   final Set<String> alreadyTagged = {};
+
+  Future<void> createNotification({
+    required String userId,
+    required String type,
+    required String message,
+    required String actorName,
+    required String groupId,
+    required int month,
+    required int year,
+  }) async {
+    await Supabase.instance.client.from('notifications').insert({
+      'user_id': userId,
+      'type': type,
+      'message': message,
+      'actor_name': actorName,
+      'group_id': groupId,
+      'month': month,
+      'year': year,
+      'created_at': DateTime.now().toIso8601String(),
+      'read': false,
+    });
+  }
+
+  Set<String> extractMentions(String content) {
+    final regex = RegExp(r'@(\w+)');
+    return regex.allMatches(content).map((m) => m.group(1)!).toSet();
+  }
 
   Widget _buildContentWithMentions(String content, {bool isRoot = false}) {
     final words = content.split(' ');
@@ -75,41 +106,162 @@ class _GroupCommentsSectionState extends State<GroupCommentsSection> {
           final id = c['id'] as String;
           final isNew = DateTime.parse(c['created_at']).isAfter(lastSeen);
           if (isNew && showNewTag[id] != true && !alreadyTagged.contains(id)) {
-  showNewTag[id] = true;
-  alreadyTagged.add(id);
+            showNewTag[id] = true;
+            alreadyTagged.add(id);
 
-  Timer(const Duration(seconds: 5), () {
-    if (mounted) {
-      setState(() {
-        showNewTag[id] = false;
-      });
-    }
-  });
-}
+            Timer(const Duration(seconds: 5), () {
+              if (mounted) {
+                setState(() {
+                  showNewTag[id] = false;
+                });
+              }
+            });
+          }
         }
       });
     }
   }
 
   Future<void> _addComment({String? parentId}) async {
+    if (isSending) return;
+    setState(() => isSending = true);
+
     final controller = parentId == null
         ? commentController
         : replyControllers[parentId] ?? TextEditingController();
     final content = controller.text.trim();
-    if (content.isEmpty) return;
+    if (content.isEmpty) {
+      setState(() => isSending = false);
+      return;
+    }
 
-    await Supabase.instance.client.from('group_comments').insert({
-      'group_id': widget.groupId,
-      'user_id': Supabase.instance.client.auth.currentUser?.id,
-      'month': widget.month,
-      'year': widget.year,
-      'content': content,
-      'parent_id': parentId,
-      'created_at': DateTime.now().toUtc().toIso8601String(),
-    });
+    final currentUserId = Supabase.instance.client.auth.currentUser?.id;
+    if (currentUserId == null) {
+      setState(() => isSending = false);
+      return;
+    }
+
+    final currentUserName =
+        Supabase.instance.client.auth.currentUser?.userMetadata?['name'] ??
+        'Alguien';
+
+    final response =
+        await Supabase.instance.client.from('group_comments').insert({
+          'group_id': widget.groupId,
+          'user_id': currentUserId,
+          'month': widget.month,
+          'year': widget.year,
+          'content': content,
+          'parent_id': parentId,
+          'created_at': DateTime.now().toUtc().toIso8601String(),
+        }).select();
 
     controller.clear();
     await _loadComments();
+
+    if (parentId != null) {
+      final parentComment = comments.firstWhere(
+        (c) => c['id'] == parentId,
+        orElse: () => {},
+      );
+      final targetUserId = parentComment['user_id'];
+      if (targetUserId != null && targetUserId != currentUserId) {
+        await createNotification(
+          userId: targetUserId,
+          type: 'reply',
+          message: 'Te respondieron en el grupo',
+          actorName: currentUserName,
+          groupId: widget.groupId,
+          month: widget.month,
+          year: widget.year,
+        );
+      }
+    } else {
+      final groupResponse = await Supabase.instance.client
+          .from('groups')
+          .select('name')
+          .eq('id', widget.groupId)
+          .single();
+
+      final groupName = groupResponse['name'] ?? 'Grupo desconocido';
+      final preview = content.length > 40
+          ? '${content.substring(0, 40)}…'
+          : content;
+      final message = '“$preview”\nEn el grupo: "$groupName"';
+
+      await createNotification(
+        userId: currentUserId,
+        type: 'comment',
+        message: message,
+        actorName: currentUserName,
+        groupId: widget.groupId,
+        month: widget.month,
+        year: widget.year,
+      );
+      await notifyGroupComment(
+        actorId: currentUserId,
+        actorName: currentUserName,
+        groupId: widget.groupId,
+        month: widget.month,
+        year: widget.year,
+        message: message,
+      );
+
+      final mentionedNames = extractMentions(content);
+      if (mentionedNames.isNotEmpty) {
+        final userRows = await Supabase.instance.client
+            .from('users')
+            .select('id, name')
+            .filter('name', 'in', '(${mentionedNames.join(',')})');
+
+        final mentionedUsers = List<Map<String, dynamic>>.from(userRows);
+        for (final user in mentionedUsers) {
+          final mentionedId = user['id'];
+          if (mentionedId != currentUserId) {
+            await createNotification(
+              userId: mentionedId,
+              type: 'mention',
+              message: 'Te mencionaron en un comentario',
+              actorName: currentUserName,
+              groupId: widget.groupId,
+              month: widget.month,
+              year: widget.year,
+            );
+          }
+        }
+      }
+    }
+
+    if (mounted) setState(() => isSending = false);
+  }
+
+  Future<void> notifyGroupComment({
+    required String actorId,
+    required String actorName,
+    required String groupId,
+    required int month,
+    required int year,
+    required String message,
+  }) async {
+    final members = await Supabase.instance.client
+        .from('group_members')
+        .select('user_id')
+        .eq('group_id', groupId);
+
+    for (final member in members) {
+      final targetUserId = member['user_id'];
+      if (targetUserId == null || targetUserId == actorId) continue;
+
+      await createNotification(
+        userId: targetUserId,
+        type: 'comment',
+        message: message,
+        actorName: actorName,
+        groupId: groupId,
+        month: month,
+        year: year,
+      );
+    }
   }
 
   Future<void> _updateComment(String commentId) async {
@@ -165,6 +317,27 @@ class _GroupCommentsSectionState extends State<GroupCommentsSection> {
             },
           ),
         ],
+      ),
+    );
+  }
+
+  void _openGroup(Map<String, dynamic> notif) {
+    final groupId = notif['group_id'];
+    final month = notif['month'];
+    final year = notif['year'];
+    final commentId = notif['comment_id']; // opcional
+
+    if (groupId == null || month == null || year == null) return;
+
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => GroupCommentsSection(
+          groupId: groupId,
+          month: month,
+          year: year,
+          highlightCommentId: commentId,
+        ),
       ),
     );
   }
@@ -449,37 +622,47 @@ class _GroupCommentsSectionState extends State<GroupCommentsSection> {
                                             CrossAxisAlignment.start,
                                         children: [
                                           Row(
-  children: [
-    Text(
-      nombreR,
-      style: TextStyle(
-        fontWeight: FontWeight.w500,
-        color: colorR,
-      ),
-    ),
-    const SizedBox(width: 6),
-    if (showNewTag[r['id']] == true)
-      AnimatedOpacity(
-        opacity: 1.0,
-        duration: const Duration(milliseconds: 600),
-        child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-          decoration: BoxDecoration(
-            color: Colors.orange,
-            borderRadius: BorderRadius.circular(8),
-          ),
-          child: const Text(
-            'Nuevo',
-            style: TextStyle(
-              color: Colors.white,
-              fontSize: 11,
-              fontWeight: FontWeight.bold,
-            ),
-          ),
-        ),
-      ),
-  ],
-),
+                                            children: [
+                                              Text(
+                                                nombreR,
+                                                style: TextStyle(
+                                                  fontWeight: FontWeight.w500,
+                                                  color: colorR,
+                                                ),
+                                              ),
+                                              const SizedBox(width: 6),
+                                              if (showNewTag[r['id']] == true)
+                                                AnimatedOpacity(
+                                                  opacity: 1.0,
+                                                  duration: const Duration(
+                                                    milliseconds: 600,
+                                                  ),
+                                                  child: Container(
+                                                    padding:
+                                                        const EdgeInsets.symmetric(
+                                                          horizontal: 6,
+                                                          vertical: 2,
+                                                        ),
+                                                    decoration: BoxDecoration(
+                                                      color: Colors.orange,
+                                                      borderRadius:
+                                                          BorderRadius.circular(
+                                                            8,
+                                                          ),
+                                                    ),
+                                                    child: const Text(
+                                                      'Nuevo',
+                                                      style: TextStyle(
+                                                        color: Colors.white,
+                                                        fontSize: 11,
+                                                        fontWeight:
+                                                            FontWeight.bold,
+                                                      ),
+                                                    ),
+                                                  ),
+                                                ),
+                                            ],
+                                          ),
                                           const SizedBox(height: 2),
                                           Text(
                                             formatearFecha(
@@ -595,7 +778,8 @@ class _GroupCommentsSectionState extends State<GroupCommentsSection> {
           ),
           const SizedBox(height: 8),
           ElevatedButton(
-            onPressed: () => _addComment(),
+            onPressed: isSending ? null : () => _addComment(),
+
             style: ElevatedButton.styleFrom(
               backgroundColor: const Color.fromARGB(255, 37, 61, 197),
               foregroundColor: Colors.white,

@@ -42,6 +42,21 @@ class _ExpenseFormState extends State<ExpenseForm> {
     return Color(int.parse(buffer.toString(), radix: 16));
   }
 
+  @override
+  void initState() {
+    super.initState();
+    _loadCategories();
+
+    title = widget.expense?['title'] ?? '';
+    amount = widget.expense?['amount']?.toDouble() ?? 0.0;
+    selectedDate = widget.expense?['date'] != null
+        ? DateTime.parse(widget.expense!['date'])
+        : DateTime.now();
+    selectedCategoryId = widget.expense?['category_id']?.toString();
+
+    receiptUrl = widget.expense?['receipt_url'];
+  }
+
   Future<void> _loadCategories() async {
     final response = await Supabase.instance.client
         .from('categories')
@@ -69,7 +84,7 @@ class _ExpenseFormState extends State<ExpenseForm> {
   }
 
   Future<void> _pickImage({required ImageSource source}) async {
-    final ImagePicker picker = ImagePicker();
+    final picker = ImagePicker();
     final pickedFile = await picker.pickImage(source: source);
     if (pickedFile != null) {
       final originalFile = File(pickedFile.path);
@@ -102,20 +117,6 @@ class _ExpenseFormState extends State<ExpenseForm> {
     }
   }
 
-  Future<void> _pickDate() async {
-    final picked = await showDatePicker(
-      context: context,
-      initialDate: selectedDate,
-      firstDate: DateTime(2000),
-      lastDate: DateTime(2100),
-      locale: const Locale('es'),
-    );
-
-    if (picked != null && picked != selectedDate) {
-      setState(() => selectedDate = picked);
-    }
-  }
-
   void _mostrarSelectorFuenteImagen() {
     showModalBottomSheet(
       context: context,
@@ -143,29 +144,96 @@ class _ExpenseFormState extends State<ExpenseForm> {
     );
   }
 
-  @override
-void initState() {
-  super.initState();
-  final expense = widget.expense;
-  print('🧾 Expense recibido: $expense');
+  Future<void> _submitExpense() async {
+  if (!_formKey.currentState!.validate()) return;
 
-  if (expense != null) {
-    print('📎 Comprobante en expense: ${expense['receipt_url']}');
+  final currentUserId = Supabase.instance.client.auth.currentUser?.id;
 
-    title = expense['title'] ?? '';
-    amount = (expense['amount'] as num).toDouble();
-    selectedDate = DateTime.parse(expense['date']);
-
-    if (expense['receipt_url'] != null) {
-      receiptUrl = Supabase.instance.client.storage
-        .from('receipts')
-        .getPublicUrl(expense['receipt_url']);
-      print('✅ Receipt URL generada: $receiptUrl');
-    }
+  if (currentUserId == null) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('Error: usuario no autenticado')),
+    );
+    return;
   }
 
-  _loadCategories();
+  final data = {
+    'title': title,
+    'amount': amount,
+    'date': selectedDate.toIso8601String(),
+    'category_id': selectedCategoryId,
+    'group_id': widget.groupId,
+  };
+
+  if (widget.expense == null) {
+    data['user_id'] = currentUserId;
+  }
+
+  // 🗑️ Eliminar comprobante anterior si fue quitado manualmente
+  if (widget.expense != null &&
+      widget.expense!['receipt_url'] != null &&
+      receiptUrl == null &&
+      receiptImage == null) {
+    await Supabase.instance.client.storage
+        .from('receipts')
+        .remove([widget.expense!['receipt_url']]);
+  }
+
+  if (receiptImage != null) {
+    final imageBytes = await receiptImage!.readAsBytes();
+    final fileName = 'receipt_${DateTime.now().millisecondsSinceEpoch}.jpg';
+
+    await Supabase.instance.client.storage
+        .from('receipts')
+        .uploadBinary(fileName, imageBytes);
+
+    data['receipt_url'] = fileName;
+  } else if (receiptUrl != null) {
+    data['receipt_url'] = receiptUrl;
+  } else {
+    data['receipt_url'] = null; // ✅ fuerza la eliminación en Supabase
+  }
+
+  try {
+    if (widget.expense != null) {
+      final originalUserId = widget.expense!['user_id'];
+      if (originalUserId != null) {
+        data['user_id'] = originalUserId;
+      }
+
+      await Supabase.instance.client
+          .from('expenses')
+          .update(data)
+          .eq('id', widget.expense!['id']);
+    } else {
+      await Supabase.instance.client.from('expenses').insert(data);
+    }
+
+    if (context.mounted) Navigator.pop(context, true);
+  } catch (error) {
+    if (context.mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('❌ Error al guardar: $error'),
+          backgroundColor: Colors.red,
+        ),
+      );
+    }
+  }
 }
+
+  Future<void> _pickDate() async {
+    final picked = await showDatePicker(
+      context: context,
+      initialDate: selectedDate,
+      firstDate: DateTime(2000),
+      lastDate: DateTime(2100),
+      locale: const Locale('es'),
+    );
+
+    if (picked != null && picked != selectedDate) {
+      setState(() => selectedDate = picked);
+    }
+  }
 
   void _mostrarComprobanteZoomable(String fileName) {
     final url = Supabase.instance.client.storage
@@ -205,92 +273,12 @@ void initState() {
     );
   }
 
-  Future<void> _submitExpense() async {
-    if (_formKey.currentState!.validate()) {
-      if (selectedCategoryId == null || selectedCategoryId!.isEmpty) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Selecciona una categoría')),
-        );
-        return;
-      }
-
-      final userId = Supabase.instance.client.auth.currentUser?.id;
-      final client = Supabase.instance.client;
-
-      if (userId != null) {
-        final data = {
-          'title': title,
-          'amount': amount,
-          'date': selectedDate.toIso8601String(),
-          'category_id': selectedCategoryId,
-          'group_id': widget.groupId,
-        };
-
-        String? fileName;
-        if (receiptImage != null) {
-          // Si hay comprobante anterior, eliminarlo
-          if (widget.expense?['receipt_url'] != null) {
-            await client.storage.from('receipts').remove([
-              widget.expense!['receipt_url'],
-            ]);
-          }
-
-          final imageBytes = await receiptImage!.readAsBytes();
-          fileName = 'receipt_${DateTime.now().millisecondsSinceEpoch}.jpg';
-          await client.storage
-              .from('receipts')
-              .uploadBinary(fileName, imageBytes);
-          data['receipt_url'] = fileName;
-        } else if (receiptUrl == null &&
-            widget.expense?['receipt_url'] != null) {
-          // Si el usuario eliminó el comprobante manualmente
-          await client.storage.from('receipts').remove([
-            widget.expense!['receipt_url'],
-          ]);
-          data['receipt_url'] = null;
-        } else if (receiptUrl != null) {
-          // Si el comprobante anterior sigue y no se modificó
-          data['receipt_url'] = widget.expense!['receipt_url'];
-        }
-
-        if (widget.expense == null) {
-          data['user_id'] = userId;
-
-          final insertResponse = await client
-              .from('expenses')
-              .insert(data)
-              .select();
-          final expenseId = insertResponse.first['id'];
-
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Gasto registrado exitosamente')),
-          );
-        } else {
-          data['updated_by'] = userId;
-          final expenseId = widget.expense!['id'];
-
-          if (receiptImage == null && widget.expense!['receipt_url'] != null) {
-            await client.storage.from('receipts').remove([
-              widget.expense!['receipt_url'],
-            ]);
-            data['receipt_url'] = null;
-          }
-
-          await client.from('expenses').update(data).eq('id', expenseId);
-
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Gasto actualizado exitosamente')),
-          );
-        }
-
-        Navigator.pop(context, true);
-      }
-    }
-  }
-
   @override
   Widget build(BuildContext context) {
-    final hasReceipt = receiptUrl != null;
+    debugPrint('📷 receiptImage: $receiptImage');
+    debugPrint('🌐 receiptUrl: $receiptUrl');
+
+    final tieneComprobante = receiptUrl != null || receiptImage != null;
 
     return Scaffold(
       appBar: AppBar(
@@ -362,21 +350,33 @@ void initState() {
                 validator: (value) =>
                     value == null ? 'Selecciona una categoría' : null,
               ),
+
               const SizedBox(height: 16),
+
               Row(
                 children: [
                   IconButton(
                     icon: Icon(
                       Icons.camera_alt,
                       size: 18,
-                      color: hasReceipt ? Colors.blue : Colors.grey,
+                      color: tieneComprobante ? Colors.blue : Colors.grey,
                     ),
-                    onPressed: hasReceipt
-                        ? () => _mostrarComprobanteZoomable(
-                            widget.expense!['receipt_url'],
-                          )
+                    onPressed: tieneComprobante
+                        ? () {
+                            if (receiptImage != null) {
+                              showDialog(
+                                context: context,
+                                builder: (_) =>
+                                    Dialog(child: Image.file(receiptImage!)),
+                              );
+                            } else if (receiptUrl != null) {
+                              _mostrarComprobanteZoomable(receiptUrl!);
+                            }
+                          }
                         : null,
-                    tooltip: hasReceipt ? 'Ver comprobante' : 'Sin comprobante',
+                    tooltip: tieneComprobante
+                        ? 'Ver comprobante'
+                        : 'Sin comprobante',
                   ),
                   const SizedBox(width: 8),
                   ElevatedButton(
@@ -403,12 +403,24 @@ void initState() {
                     SizedBox(
                       width: 48,
                       height: 48,
-                      child: Image.network(receiptUrl!, fit: BoxFit.cover),
+                      child: Image.network(
+                        Supabase.instance.client.storage
+                            .from('receipts')
+                            .getPublicUrl(receiptUrl!),
+                        fit: BoxFit.cover,
+                      ),
                     ),
                     IconButton(
                       icon: const Icon(Icons.delete, color: Colors.red),
                       tooltip: 'Eliminar comprobante',
-                      onPressed: () => setState(() => receiptUrl = null),
+                      onPressed: () async {
+                        if (receiptUrl != null) {
+                          await Supabase.instance.client.storage
+                              .from('receipts')
+                              .remove([receiptUrl!]);
+                        }
+                        setState(() => receiptUrl = null);
+                      },
                     ),
                   ],
                 ],

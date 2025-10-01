@@ -37,6 +37,7 @@ class _GroupDetailPageState extends State<GroupDetailPage>
   String? selectedCategory;
   int selectedMonthIndex = DateTime.now().month; // 1–12
   int selectedYear = DateTime.now().year;
+
   void _showEditBudgetDialog() {
     final TextEditingController budgetController = TextEditingController();
 
@@ -219,10 +220,15 @@ categories(name, icon, color)
 
       final Map<String, double> tempBalances = {};
       for (var e in expenseData) {
-        final userId = e['user_id'];
-        final amount = (e['amount'] as num).toDouble();
-        tempBalances[userId] = (tempBalances[userId] ?? 0) + amount;
-      }
+  final userId = e['user_id'];
+  final amount = (e['amount'] as num).toDouble();
+
+  if (userId is String && userId.isNotEmpty) {
+    tempBalances[userId] = (tempBalances[userId] ?? 0) + amount;
+  } else {
+    print('⚠️ Gasto sin user_id válido: ${e['title']}');
+  }
+}
 
       if (!mounted) return;
       print(
@@ -341,7 +347,12 @@ categories(name, icon, color)
     }
   }
 
-  void _mostrarComprobanteZoomable(String fileName) {
+  void _mostrarComprobanteZoomable(String? fileName) {
+    if (fileName == null || fileName.isEmpty) {
+      debugPrint('Comprobante no disponible');
+      return;
+    }
+
     final url = Supabase.instance.client.storage
         .from('receipts')
         .getPublicUrl(fileName);
@@ -349,31 +360,50 @@ categories(name, icon, color)
     showDialog(
       context: context,
       builder: (context) => Dialog(
+        insetPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 24),
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const Padding(
-              padding: EdgeInsets.all(12),
-              child: Text(
-                'Comprobante',
-                style: TextStyle(fontWeight: FontWeight.bold),
+        child: LayoutBuilder(
+          builder: (context, constraints) {
+            final maxWidth = constraints.maxWidth;
+            return SizedBox(
+              width: maxWidth * 0.95, // usa el 95% del ancho disponible
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Padding(
+                    padding: EdgeInsets.all(12),
+                    child: Text(
+                      'Comprobante',
+                      style: TextStyle(fontWeight: FontWeight.bold),
+                    ),
+                  ),
+                  AspectRatio(
+                    aspectRatio: 4 / 5,
+                    child: InteractiveViewer(
+                      panEnabled: true,
+                      minScale: 1,
+                      maxScale: 4,
+                      child: ClipRRect(
+                        borderRadius: BorderRadius.circular(8),
+                        child: Image.network(
+                          url,
+                          fit: BoxFit.contain,
+                          errorBuilder: (context, error, stackTrace) =>
+                              const Center(
+                                child: Text('No se pudo cargar el comprobante'),
+                              ),
+                        ),
+                      ),
+                    ),
+                  ),
+                  TextButton(
+                    onPressed: () => Navigator.pop(context),
+                    child: const Text('Cerrar'),
+                  ),
+                ],
               ),
-            ),
-            SizedBox(
-              height: 300,
-              child: InteractiveViewer(
-                panEnabled: true,
-                minScale: 1,
-                maxScale: 4,
-                child: Image.network(url),
-              ),
-            ),
-            TextButton(
-              onPressed: () => Navigator.pop(context),
-              child: const Text('Cerrar'),
-            ),
-          ],
+            );
+          },
         ),
       ),
     );
@@ -436,15 +466,42 @@ categories(name, icon, color)
 
   @override
   Widget build(BuildContext context) {
-    final double total = expenses.fold<double>(
-      0,
-      (sum, e) => sum + (e['amount'] as num).toDouble(),
-    );
+    final double totalDelMes = expenses
+        .where((e) {
+          final fecha = DateTime.tryParse(e['date']);
+          return fecha != null &&
+              (selectedMonthIndex == 0 || fecha.month == selectedMonthIndex);
+        })
+        .fold<double>(0.0, (sum, e) => sum + (e['amount'] as num).toDouble());
 
     return Scaffold(
       appBar: AppBar(
         title: Text('Grupo: ${widget.groupName}'),
         backgroundColor: AppColors.primary,
+        actions: [
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 12.0),
+            child: DropdownButtonHideUnderline(
+              child: DropdownButton<String>(
+                value: selectedMonth,
+                icon: const Icon(Icons.arrow_drop_down, color: Colors.white),
+                dropdownColor: AppColors.primary,
+                style: const TextStyle(color: Colors.white),
+                items: meses.map((mes) {
+                  return DropdownMenuItem(value: mes, child: Text(mes));
+                }).toList(),
+                onChanged: (nuevoMes) {
+                  setState(() {
+                    selectedMonth = nuevoMes!;
+                    selectedMonthIndex = meses.indexOf(
+                      nuevoMes,
+                    ); // ← esto es clave
+                  });
+                },
+              ),
+            ),
+          ),
+        ],
       ),
       body: isLoading
           ? const Center(child: CircularProgressIndicator())
@@ -458,6 +515,7 @@ categories(name, icon, color)
                     members: members,
                     balances: balances,
                     showStatsDetails: showStatsDetails,
+                    selectedMonthIndex: selectedMonthIndex,
                     onToggle: (expanded) =>
                         setState(() => showStatsDetails = expanded),
                   ),
@@ -484,10 +542,7 @@ categories(name, icon, color)
                   BudgetCard(
                     monthlyBudget: monthlyBudget,
                     currentUserRole: currentUserRole,
-                    totalSpent: expenses.fold<double>(
-                      0,
-                      (sum, e) => sum + (e['amount'] as num).toDouble(),
-                    ),
+                    totalSpent: totalDelMes, // ← filtrado por mes
                     onEditBudget: _showEditBudgetDialog,
                   ),
 
@@ -559,38 +614,12 @@ categories(name, icon, color)
             ),
           ],
         ),
-        Padding(
-          padding: const EdgeInsets.symmetric(vertical: 6.0),
-          child: Row(
-            children: [
-              const Text('Filtrar por mes:'),
-              const SizedBox(width: 8),
-              DropdownButton<String>(
-                value: selectedMonth,
-                items: meses.map((mes) {
-                  return DropdownMenuItem(value: mes, child: Text(mes));
-                }).toList(),
-                onChanged: (nuevoMes) {
-                  setState(() {
-                    selectedMonth = nuevoMes!;
-                    selectedMonthIndex = meses.indexOf(
-                      nuevoMes,
-                    ); // ← esto es clave
-                  });
-                },
-              ),
-            ],
-          ),
-        ),
-
-        const SizedBox(height: 10),
 
         if (filteredExpensesByMonth.isEmpty)
           const Text(
             'No hay gastos registrados en este mes.',
             style: TextStyle(color: Colors.grey),
           ),
-
         ...filteredExpenses.map((e) {
           final amount = (e['amount'] as num).toDouble();
           final name = e['users']?['name'] ?? 'Sin nombre';
@@ -689,61 +718,56 @@ categories(name, icon, color)
                             }
 
                             try {
-                              await Supabase.instance.client
-                                  .from('expenses')
-                                  .delete()
-                                  .eq('id', expenseId);
+  // 🗑️ Eliminar comprobante si existe
+  final receiptUrl = e['receipt_url'];
+  if (receiptUrl != null && receiptUrl is String && receiptUrl.isNotEmpty) {
+    await Supabase.instance.client.storage
+        .from('receipts')
+        .remove([receiptUrl]);
+  }
 
-                              if (context.mounted) {
-                                ScaffoldMessenger.of(context).showSnackBar(
-                                  SnackBar(
-                                    content: Row(
-                                      children: [
-                                        const Icon(
-                                          Icons.check_circle,
-                                          color: Colors.white,
-                                        ),
-                                        const SizedBox(width: 12),
-                                        Expanded(
-                                          child: Text(
-                                            '✅ "${e['title']}" fue eliminado exitosamente',
-                                          ),
-                                        ),
-                                      ],
-                                    ),
-                                    backgroundColor: const Color.fromARGB(
-                                      255,
-                                      64,
-                                      148,
-                                      67,
-                                    ),
-                                    behavior: SnackBarBehavior.floating,
-                                    margin: const EdgeInsets.all(16),
-                                    duration: const Duration(seconds: 3),
-                                    shape: RoundedRectangleBorder(
-                                      borderRadius: BorderRadius.circular(12),
-                                    ),
-                                  ),
-                                );
-                              }
+  // 🗑️ Eliminar gasto
+  await Supabase.instance.client
+      .from('expenses')
+      .delete()
+      .eq('id', expenseId);
 
-                              _loadGroupDetails();
-                              await Future.delayed(
-                                const Duration(milliseconds: 300),
-                              );
-                              if (context.mounted) Navigator.pop(context);
-                            } catch (error) {
-                              if (context.mounted) {
-                                ScaffoldMessenger.of(context).showSnackBar(
-                                  SnackBar(
-                                    content: Text(
-                                      '❌ Error al eliminar: $error',
-                                    ),
-                                    backgroundColor: Colors.red,
-                                  ),
-                                );
-                              }
-                            }
+  if (context.mounted) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Row(
+          children: [
+            const Icon(Icons.check_circle, color: Colors.white),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Text('✅ "${e['title']}" fue eliminado exitosamente'),
+            ),
+          ],
+        ),
+        backgroundColor: const Color.fromARGB(255, 64, 148, 67),
+        behavior: SnackBarBehavior.floating,
+        margin: const EdgeInsets.all(16),
+        duration: const Duration(seconds: 3),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(12),
+        ),
+      ),
+    );
+  }
+
+  _loadGroupDetails();
+  await Future.delayed(const Duration(milliseconds: 300));
+  if (context.mounted) Navigator.pop(context);
+} catch (error) {
+  if (context.mounted) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text('❌ Error al eliminar: $error'),
+        backgroundColor: Colors.red,
+      ),
+    );
+  }
+}
                           }
                         },
                       ),
@@ -765,34 +789,46 @@ categories(name, icon, color)
                     Row(
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
-                        Row(
-                          children: [
-                            IconButton(
-                              icon: Icon(
-                                Icons.camera_alt,
-                                size: 18,
-                                color: e['receipt_url'] != null
-                                    ? Colors.blue
-                                    : Colors.grey,
+                        Expanded(
+                          child: Row(
+                            crossAxisAlignment: CrossAxisAlignment.center,
+                            children: [
+                              GestureDetector(
+                                onTap:
+                                    (e['receipt_url'] is String &&
+                                        e['receipt_url'].isNotEmpty)
+                                    ? () => _mostrarComprobanteZoomable(
+                                        e['receipt_url'],
+                                      )
+                                    : null,
+                                child: Padding(
+                                  padding: const EdgeInsets.only(
+                                    right: 8,
+                                  ), // separa el ícono del texto
+                                  child: Icon(
+                                    Icons.camera_alt,
+                                    size: 22,
+                                    color: e['receipt_url'] != null
+                                        ? Colors.blue
+                                        : Colors.grey,
+                                  ),
+                                ),
                               ),
-                              onPressed: e['receipt_url'] != null
-                                  ? () => _mostrarComprobanteZoomable(
-                                      e['receipt_url'],
-                                    )
-                                  : null,
-                              tooltip: e['receipt_url'] != null
-                                  ? 'Ver comprobante'
-                                  : 'Sin comprobante',
-                            ),
-                            const SizedBox(width: 4),
-                            Text(
-                              e['title'],
-                              style: const TextStyle(
-                                fontSize: 15,
-                                color: AppColors.textPrimary,
+                              Expanded(
+                                child: Padding(
+                                  padding: const EdgeInsets.only(left: 3),
+                                  child: Text(
+                                    e['title'] ?? '',
+                                    style: const TextStyle(
+                                      fontSize: 15,
+                                      color: AppColors.textPrimary,
+                                    ),
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                ),
                               ),
-                            ),
-                          ],
+                            ],
+                          ),
                         ),
                         Row(
                           children: [
