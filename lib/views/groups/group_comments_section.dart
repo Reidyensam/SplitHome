@@ -59,7 +59,7 @@ class _GroupCommentsSectionState extends State<GroupCommentsSection> {
   }
 
   Set<String> extractMentions(String content) {
-    final regex = RegExp(r'@(\w+)');
+    final regex = RegExp(r'@([\wáéíóúÁÉÍÓÚñÑ]+)');
     return regex.allMatches(content).map((m) => m.group(1)!).toSet();
   }
 
@@ -159,77 +159,56 @@ class _GroupCommentsSectionState extends State<GroupCommentsSection> {
     controller.clear();
     await _loadComments();
 
+    final groupResponse = await Supabase.instance.client
+        .from('groups')
+        .select('name')
+        .eq('id', widget.groupId)
+        .single();
+
+    final groupName = groupResponse['name'] ?? 'Grupo desconocido';
+    final preview = content.length > 40
+        ? '${content.substring(0, 40)}…'
+        : content;
+    final formattedMessage = '“$preview”\nEn el grupo: "$groupName"';
+
     if (parentId != null) {
       final parentComment = comments.firstWhere(
         (c) => c['id'] == parentId,
         orElse: () => {},
       );
       final targetUserId = parentComment['user_id'];
+
       if (targetUserId != null && targetUserId != currentUserId) {
         await createNotification(
           userId: targetUserId,
           type: 'reply',
-          message: 'Te respondieron en el grupo',
+          message: formattedMessage,
           actorName: currentUserName,
           groupId: widget.groupId,
           month: widget.month,
           year: widget.year,
         );
       }
+
+      await notifyGroupReply(
+  actorId: currentUserId,
+  actorName: currentUserName,
+  groupId: widget.groupId,
+  month: widget.month,
+  year: widget.year,
+  message: formattedMessage,
+  excludeUserId: targetUserId ?? '',
+  debug: true,
+);
     } else {
-      final groupResponse = await Supabase.instance.client
-          .from('groups')
-          .select('name')
-          .eq('id', widget.groupId)
-          .single();
-
-      final groupName = groupResponse['name'] ?? 'Grupo desconocido';
-      final preview = content.length > 40
-          ? '${content.substring(0, 40)}…'
-          : content;
-      final message = '“$preview”\nEn el grupo: "$groupName"';
-
-      await createNotification(
-        userId: currentUserId,
-        type: 'comment',
-        message: message,
-        actorName: currentUserName,
-        groupId: widget.groupId,
-        month: widget.month,
-        year: widget.year,
-      );
       await notifyGroupComment(
         actorId: currentUserId,
         actorName: currentUserName,
         groupId: widget.groupId,
         month: widget.month,
         year: widget.year,
-        message: message,
+        message: formattedMessage,
       );
-
-      final mentionedNames = extractMentions(content);
-      if (mentionedNames.isNotEmpty) {
-        final userRows = await Supabase.instance.client
-            .from('users')
-            .select('id, name')
-            .filter('name', 'in', '(${mentionedNames.join(',')})');
-
-        final mentionedUsers = List<Map<String, dynamic>>.from(userRows);
-        for (final user in mentionedUsers) {
-          final mentionedId = user['id'];
-          if (mentionedId != currentUserId) {
-            await createNotification(
-              userId: mentionedId,
-              type: 'mention',
-              message: 'Te mencionaron en un comentario',
-              actorName: currentUserName,
-              groupId: widget.groupId,
-              month: widget.month,
-              year: widget.year,
-            );
-          }
-        }
-      }
     }
 
     if (mounted) setState(() => isSending = false);
@@ -242,6 +221,7 @@ class _GroupCommentsSectionState extends State<GroupCommentsSection> {
     required int month,
     required int year,
     required String message,
+    bool debug = false,
   }) async {
     final members = await Supabase.instance.client
         .from('group_members')
@@ -249,8 +229,15 @@ class _GroupCommentsSectionState extends State<GroupCommentsSection> {
         .eq('group_id', groupId);
 
     for (final member in members) {
-      final targetUserId = member['user_id'];
-      if (targetUserId == null || targetUserId == actorId) continue;
+      final targetUserId = member['user_id']?.toString().trim();
+      final actorTrimmed = actorId.trim();
+
+      if (targetUserId == null || targetUserId == actorTrimmed) {
+        if (debug) print('🔕 Ignorado (autor): $targetUserId');
+        continue;
+      }
+
+      if (debug) print('🔔 Notificando a: $targetUserId');
 
       await createNotification(
         userId: targetUserId,
@@ -263,6 +250,47 @@ class _GroupCommentsSectionState extends State<GroupCommentsSection> {
       );
     }
   }
+
+  Future<void> notifyGroupReply({
+  required String actorId,
+  required String actorName,
+  required String groupId,
+  required int month,
+  required int year,
+  required String message,
+  required String excludeUserId,
+  bool debug = false,
+}) async {
+  final members = await Supabase.instance.client
+      .from('group_members')
+      .select('user_id')
+      .eq('group_id', groupId);
+
+  for (final member in members) {
+    final targetUserId = member['user_id']?.toString().trim();
+    if (targetUserId == null || targetUserId == actorId) {
+      if (debug) print('🔕 Ignorado (autor de la respuesta): $targetUserId');
+      continue;
+    }
+
+    if (targetUserId == excludeUserId) {
+      if (debug) print('🔕 Ignorado (autor original del comentario): $targetUserId');
+      continue;
+    }
+
+    if (debug) print('🔔 Notificando reply grupal a: $targetUserId');
+
+    await createNotification(
+      userId: targetUserId,
+      type: 'reply',
+      message: message,
+      actorName: actorName,
+      groupId: groupId,
+      month: month,
+      year: year,
+    );
+  }
+}
 
   Future<void> _updateComment(String commentId) async {
     final content = editController.text.trim();

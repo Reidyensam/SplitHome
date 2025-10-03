@@ -35,30 +35,60 @@ class _DashboardPageState extends State<DashboardPage> {
   }
 
   @override
-  void initState() {
-    super.initState();
+void initState() {
+  super.initState();
 
-    _loadUserData();
-    _loadNotificationSummary();
-    _loadUserGroups();
+  _loadUserData();
+  _loadNotificationSummary();
+  _loadUserGroups();
 
-    final channel = Supabase.instance.client.channel('group_members_channel');
+  // 🔁 Canal realtime para cambios en grupos
+  final groupChannel = Supabase.instance.client.channel('group_members_channel');
 
-    channel.onPostgresChanges(
-      event: PostgresChangeEvent.insert,
-      schema: 'public',
-      table: 'group_members',
-      callback: (payload) {
-        final newRecord = payload.newRecord;
-        final userId = Supabase.instance.client.auth.currentUser?.id;
-        if (newRecord != null && newRecord['user_id'] == userId) {
-          _loadUserGroups();
+  groupChannel.onPostgresChanges(
+    event: PostgresChangeEvent.insert,
+    schema: 'public',
+    table: 'group_members',
+    callback: (payload) {
+      final newRecord = payload.newRecord;
+      final userId = Supabase.instance.client.auth.currentUser?.id;
+      if (newRecord != null && newRecord['user_id'] == userId) {
+        _loadUserGroups();
+      }
+    },
+  );
+
+  groupChannel.subscribe();
+
+  // 🔔 Canal realtime para nuevas notificaciones
+  final notificationChannel = Supabase.instance.client.channel('notifications_channel');
+
+  notificationChannel.onPostgresChanges(
+    event: PostgresChangeEvent.insert,
+    schema: 'public',
+    table: 'notifications',
+    callback: (payload) {
+      final newRecord = payload.newRecord;
+      final userId = Supabase.instance.client.auth.currentUser?.id;
+
+      if (newRecord != null && newRecord['user_id'] == userId) {
+        _loadNotificationSummary(); // 🔁 actualiza el contador y la lista
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('🔔 Nueva notificación recibida'),
+              backgroundColor: Colors.blueAccent,
+              behavior: SnackBarBehavior.floating,
+              duration: const Duration(seconds: 2),
+            ),
+          );
         }
-      },
-    );
+      }
+    },
+  );
 
-    channel.subscribe();
-  }
+  notificationChannel.subscribe();
+}
 
   @override
   void didChangeDependencies() {

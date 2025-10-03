@@ -107,44 +107,6 @@ class _NotificationPageState extends State<NotificationPage> {
     }
   }
 
-  Future<void> _acceptInvitation(Map<String, dynamic> notification) async {
-    try {
-      final userId = Supabase.instance.client.auth.currentUser?.id;
-      final groupId = notification['group_id'];
-      final notificationId = notification['id'];
-      if (userId == null || groupId == null) return;
-
-      await Supabase.instance.client
-          .from('notifications')
-          .update({'status': 'accepted', 'read': true})
-          .eq('id', notificationId);
-
-      await Supabase.instance.client.from('group_members').insert({
-        'group_id': groupId,
-        'user_id': userId,
-        'role_in_group': 'member',
-      });
-
-      if (!mounted) return;
-      _loadNotifications();
-    } catch (e) {
-      debugPrint('Error al aceptar invitación: $e');
-    }
-  }
-
-  Future<void> _rejectInvitation(String notificationId) async {
-    try {
-      await Supabase.instance.client
-          .from('notifications')
-          .update({'status': 'rejected', 'read': true})
-          .eq('id', notificationId);
-      if (!mounted) return;
-      _loadNotifications();
-    } catch (e) {
-      debugPrint('Error al rechazar invitación: $e');
-    }
-  }
-
   String formatDate(dynamic date) {
     final parsed = date is String ? DateTime.parse(date) : date as DateTime;
     final local = parsed.toLocal();
@@ -226,15 +188,33 @@ class _NotificationPageState extends State<NotificationPage> {
                             child: Column(
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
-                                Text(
-                                  type == 'mention'
-                                      ? '$actorName te mencionó:'
-                                      : '$actorName comentó:',
-                                  style: TextStyle(
-                                    fontWeight: isRead
-                                        ? FontWeight.normal
-                                        : FontWeight.bold,
-                                  ),
+                                Row(
+                                  mainAxisAlignment:
+                                      MainAxisAlignment.spaceBetween,
+                                  children: [
+                                    Expanded(
+                                      child: Text(
+                                        type == 'mention'
+                                            ? '$actorName te mencionó:'
+                                            : type == 'reply'
+                                            ? '$actorName respondió:'
+                                            : '$actorName comentó:',
+                                        style: TextStyle(
+                                          fontWeight: isRead
+                                              ? FontWeight.normal
+                                              : FontWeight.bold,
+                                        ),
+                                        overflow: TextOverflow.ellipsis,
+                                      ),
+                                    ),
+                                    Text(
+                                      formatDate(createdAt),
+                                      style: const TextStyle(
+                                        fontSize: 12,
+                                        color: Colors.grey,
+                                      ),
+                                    ),
+                                  ],
                                 ),
                                 const SizedBox(height: 4),
                                 ...message.split('\n').map((line) {
@@ -262,29 +242,7 @@ class _NotificationPageState extends State<NotificationPage> {
                                     ),
                                   );
                                 }),
-                                const SizedBox(height: 4),
-                                Text(
-                                  formatDate(createdAt),
-                                  style: const TextStyle(
-                                    fontSize: 12,
-                                    color: Colors.grey,
-                                  ),
-                                ),
-                                if (type == 'invitation' && status == 'pending')
-                                  Row(
-                                    children: [
-                                      TextButton(
-                                        onPressed: () =>
-                                            _acceptInvitation(notif),
-                                        child: const Text('Aceptar'),
-                                      ),
-                                      TextButton(
-                                        onPressed: () =>
-                                            _rejectInvitation(notif['id']),
-                                        child: const Text('Rechazar'),
-                                      ),
-                                    ],
-                                  ),
+                                
                               ],
                             ),
                           ),

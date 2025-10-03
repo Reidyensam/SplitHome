@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:splithome/views/expenses/expense_form.dart';
+import 'package:splithome/views/expenses/group_expense_list.dart';
 import 'package:splithome/views/groups/group_comments_section.dart';
 import 'package:splithome/widgets/budget_card.dart';
 import 'package:splithome/widgets/member_list.dart';
@@ -220,15 +221,15 @@ categories(name, icon, color)
 
       final Map<String, double> tempBalances = {};
       for (var e in expenseData) {
-  final userId = e['user_id'];
-  final amount = (e['amount'] as num).toDouble();
+        final userId = e['user_id'];
+        final amount = (e['amount'] as num).toDouble();
 
-  if (userId is String && userId.isNotEmpty) {
-    tempBalances[userId] = (tempBalances[userId] ?? 0) + amount;
-  } else {
-    print('⚠️ Gasto sin user_id válido: ${e['title']}');
-  }
-}
+        if (userId is String && userId.isNotEmpty) {
+          tempBalances[userId] = (tempBalances[userId] ?? 0) + amount;
+        } else {
+          print('⚠️ Gasto sin user_id válido: ${e['title']}');
+        }
+      }
 
       if (!mounted) return;
       print(
@@ -547,7 +548,23 @@ categories(name, icon, color)
                   ),
 
                   const SizedBox(height: 5),
-                  _buildExpenseList(),
+                  GroupExpenseList(
+                    expenses: expenses,
+                    groupId: widget.groupId,
+                    currentUserRole: currentUserRole,
+                    selectedMonthIndex: selectedMonthIndex,
+                    threshold: threshold,
+                    onShowReceipt: _mostrarComprobanteZoomable,
+                    onRefreshGroup: _loadGroupDetails,
+                    onShowSuccess: (msg) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(
+                          content: Text(msg),
+                          backgroundColor: Colors.green,
+                        ),
+                      );
+                    },
+                  ),
                   const SizedBox(height: 15),
 
                   GroupCommentsSection(
@@ -582,353 +599,5 @@ categories(name, icon, color)
 
       return matchesDate && matchesCategory && matchesMonth;
     }).toList();
-  }
-
-  Widget _buildExpenseList() {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Row(
-          children: [
-            const Icon(Icons.receipt_long, color: AppColors.accent, size: 22),
-            const SizedBox(width: 13),
-            const Text(
-              'Gastos registrados',
-              style: TextStyle(fontSize: 17, fontWeight: FontWeight.w600),
-            ),
-            const Spacer(),
-            IconButton(
-              icon: const Icon(Icons.add_card, color: AppColors.primary),
-              tooltip: 'Agregar gasto',
-              onPressed: () async {
-                final result = await Navigator.push(
-                  context,
-                  MaterialPageRoute(
-                    builder: (context) => ExpenseForm(groupId: widget.groupId),
-                  ),
-                );
-                if (result == true) {
-                  _loadGroupDetails();
-                }
-              },
-            ),
-          ],
-        ),
-
-        if (filteredExpensesByMonth.isEmpty)
-          const Text(
-            'No hay gastos registrados en este mes.',
-            style: TextStyle(color: Colors.grey),
-          ),
-        ...filteredExpenses.map((e) {
-          final amount = (e['amount'] as num).toDouble();
-          final name = e['users']?['name'] ?? 'Sin nombre';
-          final editorName = e['editor']?['name'];
-          final wasEdited = editorName != null && editorName != name;
-          final rawDate = DateTime.parse(e['date']);
-          final hour = rawDate.hour % 12 == 0 ? 12 : rawDate.hour % 12;
-          final period = rawDate.hour < 12 ? 'am' : 'pm';
-
-          return GestureDetector(
-            onTap: () {
-              final currentUserId =
-                  Supabase.instance.client.auth.currentUser?.id;
-              final expenseUserId = e['user_id'];
-              final isOwner =
-                  currentUserId != null &&
-                  expenseUserId != null &&
-                  expenseUserId == currentUserId;
-              final isPrivileged =
-                  currentUserRole == 'admin' ||
-                  currentUserRole == 'super_admin';
-
-              if (isOwner || isPrivileged) {
-                showModalBottomSheet(
-                  context: context,
-                  builder: (context) => Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      ListTile(
-                        leading: const Icon(Icons.edit),
-                        title: const Text('Editar Gasto'),
-                        onTap: () async {
-                          Navigator.pop(context);
-                          final result = await Navigator.push(
-                            context,
-                            MaterialPageRoute(
-                              builder: (context) => ExpenseForm(
-                                groupId: widget.groupId,
-                                expense: e,
-                              ),
-                            ),
-                          );
-                          if (result == true) {
-                            _loadGroupDetails();
-                          }
-                        },
-                      ),
-                      ListTile(
-                        leading: const Icon(Icons.delete),
-                        title: const Text('Eliminar gasto'),
-                        onTap: () async {
-                          final confirmed = await showDialog<bool>(
-                            context: context,
-                            builder: (dialogContext) => AlertDialog(
-                              title: const Text('¿Eliminar gasto?'),
-                              content: const Text(
-                                'Esta acción no se puede deshacer. ¿Estás seguro de que deseas eliminar este gasto?',
-                              ),
-                              actions: [
-                                TextButton(
-                                  onPressed: () =>
-                                      Navigator.pop(dialogContext, false),
-                                  child: const Text('Cancelar'),
-                                ),
-                                TextButton(
-                                  onPressed: () =>
-                                      Navigator.pop(dialogContext, true),
-                                  child: const Text('Eliminar'),
-                                ),
-                              ],
-                            ),
-                          );
-
-                          if (confirmed == true) {
-                            final expenseId = e['id'];
-
-                            final isValidUuid =
-                                expenseId is String &&
-                                expenseId.isNotEmpty &&
-                                RegExp(
-                                  r'^[0-9a-fA-F\-]{36}$',
-                                ).hasMatch(expenseId);
-
-                            if (!isValidUuid) {
-                              if (context.mounted) {
-                                ScaffoldMessenger.of(context).showSnackBar(
-                                  const SnackBar(
-                                    content: Text(
-                                      '❌ No se pudo eliminar: ID inválido',
-                                    ),
-                                    backgroundColor: Colors.red,
-                                  ),
-                                );
-                              }
-                              return;
-                            }
-
-                            try {
-  // 🗑️ Eliminar comprobante si existe
-  final receiptUrl = e['receipt_url'];
-  if (receiptUrl != null && receiptUrl is String && receiptUrl.isNotEmpty) {
-    await Supabase.instance.client.storage
-        .from('receipts')
-        .remove([receiptUrl]);
-  }
-
-  // 🗑️ Eliminar gasto
-  await Supabase.instance.client
-      .from('expenses')
-      .delete()
-      .eq('id', expenseId);
-
-  if (context.mounted) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Row(
-          children: [
-            const Icon(Icons.check_circle, color: Colors.white),
-            const SizedBox(width: 12),
-            Expanded(
-              child: Text('✅ "${e['title']}" fue eliminado exitosamente'),
-            ),
-          ],
-        ),
-        backgroundColor: const Color.fromARGB(255, 64, 148, 67),
-        behavior: SnackBarBehavior.floating,
-        margin: const EdgeInsets.all(16),
-        duration: const Duration(seconds: 3),
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(12),
-        ),
-      ),
-    );
-  }
-
-  _loadGroupDetails();
-  await Future.delayed(const Duration(milliseconds: 300));
-  if (context.mounted) Navigator.pop(context);
-} catch (error) {
-  if (context.mounted) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text('❌ Error al eliminar: $error'),
-        backgroundColor: Colors.red,
-      ),
-    );
-  }
-}
-                          }
-                        },
-                      ),
-                    ],
-                  ),
-                );
-              }
-            },
-            child: Card(
-              margin: const EdgeInsets.symmetric(vertical: 6),
-              color: AppColors.card,
-              child: Padding(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 12,
-                  vertical: 8,
-                ),
-                child: Column(
-                  children: [
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        Expanded(
-                          child: Row(
-                            crossAxisAlignment: CrossAxisAlignment.center,
-                            children: [
-                              GestureDetector(
-                                onTap:
-                                    (e['receipt_url'] is String &&
-                                        e['receipt_url'].isNotEmpty)
-                                    ? () => _mostrarComprobanteZoomable(
-                                        e['receipt_url'],
-                                      )
-                                    : null,
-                                child: Padding(
-                                  padding: const EdgeInsets.only(
-                                    right: 8,
-                                  ), // separa el ícono del texto
-                                  child: Icon(
-                                    Icons.camera_alt,
-                                    size: 22,
-                                    color: e['receipt_url'] != null
-                                        ? Colors.blue
-                                        : Colors.grey,
-                                  ),
-                                ),
-                              ),
-                              Expanded(
-                                child: Padding(
-                                  padding: const EdgeInsets.only(left: 3),
-                                  child: Text(
-                                    e['title'] ?? '',
-                                    style: const TextStyle(
-                                      fontSize: 15,
-                                      color: AppColors.textPrimary,
-                                    ),
-                                    overflow: TextOverflow.ellipsis,
-                                  ),
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                        Row(
-                          children: [
-                            Icon(
-                              getIconFromName(e['categories']?['icon']),
-                              size: 18,
-                              color: hexToColor(e['categories']?['color']),
-                            ),
-                            const SizedBox(width: 4),
-                            Text(
-                              e['categories']?['name'] ?? 'Sin categoría',
-                              style: TextStyle(
-                                fontSize: 15,
-                                color: hexToColor(e['categories']?['color']),
-                              ),
-                            ),
-                          ],
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 4),
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        Row(
-                          children: [
-                            Text(
-                              'Bs. ${amount.toStringAsFixed(2)}',
-                              style: const TextStyle(
-                                fontSize: 14,
-                                color: AppColors.textSecondary,
-                              ),
-                            ),
-                            if (amount > threshold) ...[
-                              const SizedBox(width: 6),
-                              const Icon(
-                                Icons.report_problem_outlined,
-                                color: Color.fromARGB(255, 230, 0, 0),
-                                size: 18,
-                              ),
-                            ],
-                          ],
-                        ),
-                        Text(
-                          '$hour:${rawDate.minute.toString().padLeft(2, '0')} $period',
-                          style: const TextStyle(
-                            fontSize: 14,
-                            color: AppColors.textSecondary,
-                          ),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 4),
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        Row(
-                          children: [
-                            Text(
-                              name,
-                              style: const TextStyle(
-                                fontSize: 13,
-                                color: AppColors.textSecondary,
-                              ),
-                            ),
-                            if (wasEdited) ...[
-                              const SizedBox(width: 6),
-                              const Icon(
-                                Icons.edit,
-                                size: 15,
-                                color: Colors.grey,
-                              ),
-                              const SizedBox(width: 4),
-                              Text(
-                                'Modificado por: $editorName',
-                                style: const TextStyle(
-                                  fontSize: 13,
-                                  fontStyle: FontStyle.italic,
-                                  color: Colors.grey,
-                                ),
-                              ),
-                            ],
-                          ],
-                        ),
-                        Text(
-                          '${rawDate.day.toString().padLeft(2, '0')}-${rawDate.month.toString().padLeft(2, '0')}-${rawDate.year}',
-                          style: const TextStyle(
-                            fontSize: 13,
-                            color: AppColors.textSecondary,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ],
-                ),
-              ),
-            ),
-          );
-        }),
-      ],
-    );
   }
 }
