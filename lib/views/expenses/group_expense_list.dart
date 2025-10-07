@@ -12,19 +12,18 @@ class GroupExpenseList extends StatelessWidget {
   final void Function(String fileName) onShowReceipt;
   final Future<void> Function() onRefreshGroup;
   final void Function(String message)? onShowSuccess;
-  
 
-const GroupExpenseList({
-  super.key,
-  required this.expenses,
-  required this.groupId,
-  required this.currentUserRole,
-  required this.selectedMonthIndex,
-  required this.threshold,
-  required this.onShowReceipt,
-  required this.onRefreshGroup,
-  required this.onShowSuccess,
-});
+  const GroupExpenseList({
+    super.key,
+    required this.expenses,
+    required this.groupId,
+    required this.currentUserRole,
+    required this.selectedMonthIndex,
+    required this.threshold,
+    required this.onShowReceipt,
+    required this.onRefreshGroup,
+    required this.onShowSuccess,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -166,64 +165,80 @@ const GroupExpenseList({
                             }
 
                             try {
-  final receiptUrl = e['receipt_url'];
-  if (receiptUrl != null &&
-      receiptUrl is String &&
-      receiptUrl.isNotEmpty) {
-    await Supabase.instance.client.storage
-        .from('receipts')
-        .remove([receiptUrl]);
-  }
+                              final receiptUrl = e['receipt_url'];
+                              if (receiptUrl != null &&
+                                  receiptUrl is String &&
+                                  receiptUrl.isNotEmpty) {
+                                await Supabase.instance.client.storage
+                                    .from('receipts')
+                                    .remove([receiptUrl]);
+                              }
 
-  await Supabase.instance.client
-    .from('expenses')
-    .delete()
-    .eq('id', expenseId);
+                              await Supabase.instance.client
+                                  .from('expenses')
+                                  .delete()
+                                  .eq('id', expenseId);
 
-await onRefreshGroup();
+                              final expenseTitle = e['title']
+                                  ?.toString()
+                                  .trim();
+                              final displayTitle =
+                                  (expenseTitle == null || expenseTitle.isEmpty)
+                                  ? 'Gasto'
+                                  : expenseTitle;
 
-WidgetsBinding.instance.addPostFrameCallback((_) {
-  if (context.mounted) {
-    final expenseTitle = e['title']?.toString().trim();
-    final displayTitle = (expenseTitle == null || expenseTitle.isEmpty)
-        ? 'Gasto'
-        : expenseTitle;
+                              final currentUserId =
+                                  Supabase.instance.client.auth.currentUser?.id;
+                              final currentUserName =
+                                  Supabase
+                                      .instance
+                                      .client
+                                      .auth
+                                      .currentUser
+                                      ?.userMetadata?['name'] ??
+                                  'Alguien';
 
-    print('✅ SnackBar debería mostrarse: $displayTitle');
+                              final groupResponse = await Supabase
+                                  .instance
+                                  .client
+                                  .from('groups')
+                                  .select('name')
+                                  .eq('id', groupId)
+                                  .single();
 
-    ScaffoldMessenger.of(context).clearSnackBars();
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Row(
-          children: [
-            const Icon(Icons.check_circle, color: Colors.white),
-            const SizedBox(width: 12),
-            Expanded(
-              child: Text('✅ "$displayTitle" fue eliminado exitosamente'),
-            ),
-          ],
-        ),
-        backgroundColor: const Color.fromARGB(255, 64, 148, 67),
-        behavior: SnackBarBehavior.floating,
-        margin: const EdgeInsets.all(16),
-        duration: const Duration(seconds: 3),
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(12),
-        ),
-      ),
-    );
-  }
-});
-} catch (error) {
-  if (context.mounted) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text('❌ Error al eliminar: $error'),
-        backgroundColor: Colors.red,
-      ),
-    );
-  }
-}
+                              final groupName =
+                                  groupResponse['name'] ?? 'Grupo';
+
+                              await notifyGroupExpense(
+                                actorId: currentUserId!,
+                                actorName: currentUserName,
+                                groupId: groupId,
+                                groupName: groupName,
+                                expenseName: displayTitle,
+                                type: 'expense_delete',
+                              );
+
+                              await onRefreshGroup();
+
+                              print(
+                                '✅ SnackBar debería mostrarse: $displayTitle',
+                              );
+
+                              onShowSuccess?.call(
+                                '✅ "$displayTitle" fue eliminado exitosamente',
+                              );
+                            } catch (error) {
+                              if (context.mounted) {
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  SnackBar(
+                                    content: Text(
+                                      '❌ Error al eliminar: $error',
+                                    ),
+                                    backgroundColor: Colors.red,
+                                  ),
+                                );
+                              }
+                            }
                           }
                         },
                       ),

@@ -5,6 +5,46 @@ import 'package:flutter_image_compress/flutter_image_compress.dart';
 import 'dart:io';
 import 'package:image_picker/image_picker.dart';
 
+Future<void> notifyGroupExpense({
+  required String actorId,
+  required String actorName,
+  required String groupId,
+  required String groupName,
+  required String expenseName,
+  required String type, // 'expense_add' o 'expense_edit'
+}) async {
+  print('🔔 Ejecutando notifyGroupExpense: $type');
+
+  final members = await Supabase.instance.client
+      .from('group_members')
+      .select('user_id')
+      .eq('group_id', groupId);
+
+  print('👥 Miembros encontrados: ${members.length}');
+
+  final formattedMessage = '“$expenseName”\nEn el grupo: "$groupName"';
+
+  for (final member in members) {
+    final targetUserId = member['user_id']?.toString().trim();
+    if (targetUserId == null || targetUserId == actorId.trim()) {
+      print('🔕 Ignorado (autor): $targetUserId');
+      continue;
+    }
+
+    print('🔔 Notificando a: $targetUserId');
+
+    await Supabase.instance.client.from('notifications').insert({
+      'user_id': targetUserId,
+      'type': type,
+      'message': formattedMessage,
+      'actor_name': actorName,
+      'group_id': groupId,
+      'created_at': DateTime.now().toIso8601String(),
+      'read': false,
+    });
+  }
+}
+
 class ExpenseForm extends StatefulWidget {
   final String groupId;
   final Map<String, dynamic>? expense;
@@ -194,31 +234,63 @@ class _ExpenseFormState extends State<ExpenseForm> {
   }
 
   try {
-    if (widget.expense != null) {
-      final originalUserId = widget.expense!['user_id'];
-      if (originalUserId != null) {
-        data['user_id'] = originalUserId;
-      }
+  final currentUserName = Supabase.instance.client.auth.currentUser?.userMetadata?['name'] ?? 'Alguien';
+  final groupResponse = await Supabase.instance.client
+      .from('groups')
+      .select('name')
+      .eq('id', widget.groupId)
+      .single();
+  final groupName = groupResponse['name'] ?? 'Grupo desconocido';
 
-      await Supabase.instance.client
-          .from('expenses')
-          .update(data)
-          .eq('id', widget.expense!['id']);
-    } else {
-      await Supabase.instance.client.from('expenses').insert(data);
-    }
-
-    if (context.mounted) Navigator.pop(context, true);
-  } catch (error) {
-    if (context.mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('❌ Error al guardar: $error'),
-          backgroundColor: Colors.red,
-        ),
-      );
-    }
+if (widget.expense != null) {
+  final originalUserId = widget.expense!['user_id'];
+  if (originalUserId != null) {
+    data['user_id'] = originalUserId;
   }
+
+  data['updated_by'] = currentUserId;
+
+  await Supabase.instance.client
+      .from('expenses')
+      .update(data)
+      .eq('id', widget.expense!['id']);
+
+    await notifyGroupExpense(
+      actorId: currentUserId,
+      actorName: currentUserName,
+      groupId: widget.groupId,
+      groupName: groupName,
+      expenseName: title,
+      type: 'expense_edit',
+    );
+  } else {
+    await Supabase.instance.client.from('expenses').insert(data);
+
+    await notifyGroupExpense(
+      actorId: currentUserId,
+      actorName: currentUserName,
+      groupId: widget.groupId,
+      groupName: groupName,
+      expenseName: title,
+      type: 'expense_add',
+    );
+  }
+
+  if (context.mounted) Navigator.pop(context, true);
+} catch (error) {
+  if (context.mounted) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text('❌ Error al guardar: $error'),
+        backgroundColor: Colors.red,
+      ),
+    );
+  }
+}
+
+
+
+
 }
 
   Future<void> _pickDate() async {
