@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:splithome/services/dashboard_service.dart';
 import 'package:splithome/widgets/dialogs.dart';
+import 'package:splithome/widgets/financial_summary_widget.dart';
 import 'package:splithome/widgets/group_card.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../core/constants.dart';
@@ -35,60 +36,64 @@ class _DashboardPageState extends State<DashboardPage> {
   }
 
   @override
-void initState() {
-  super.initState();
+  void initState() {
+    super.initState();
 
-  _loadUserData();
-  _loadNotificationSummary();
-  _loadUserGroups();
+    _loadUserData();
+    _loadNotificationSummary();
+    _loadUserGroups();
 
-  // 🔁 Canal realtime para cambios en grupos
-  final groupChannel = Supabase.instance.client.channel('group_members_channel');
+    // 🔁 Canal realtime para cambios en grupos
+    final groupChannel = Supabase.instance.client.channel(
+      'group_members_channel',
+    );
 
-  groupChannel.onPostgresChanges(
-    event: PostgresChangeEvent.insert,
-    schema: 'public',
-    table: 'group_members',
-    callback: (payload) {
-      final newRecord = payload.newRecord;
-      final userId = Supabase.instance.client.auth.currentUser?.id;
-      if (newRecord != null && newRecord['user_id'] == userId) {
-        _loadUserGroups();
-      }
-    },
-  );
-
-  groupChannel.subscribe();
-
-  // 🔔 Canal realtime para nuevas notificaciones
-  final notificationChannel = Supabase.instance.client.channel('notifications_channel');
-
-  notificationChannel.onPostgresChanges(
-    event: PostgresChangeEvent.insert,
-    schema: 'public',
-    table: 'notifications',
-    callback: (payload) {
-      final newRecord = payload.newRecord;
-      final userId = Supabase.instance.client.auth.currentUser?.id;
-
-      if (newRecord != null && newRecord['user_id'] == userId) {
-        _loadNotificationSummary(); // 🔁 actualiza el contador y la lista
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text('🔔 Nueva notificación recibida'),
-              backgroundColor: Colors.blueAccent,
-              behavior: SnackBarBehavior.floating,
-              duration: const Duration(seconds: 2),
-            ),
-          );
+    groupChannel.onPostgresChanges(
+      event: PostgresChangeEvent.insert,
+      schema: 'public',
+      table: 'group_members',
+      callback: (payload) {
+        final newRecord = payload.newRecord;
+        final userId = Supabase.instance.client.auth.currentUser?.id;
+        if (newRecord != null && newRecord['user_id'] == userId) {
+          _loadUserGroups();
         }
-      }
-    },
-  );
+      },
+    );
 
-  notificationChannel.subscribe();
-}
+    groupChannel.subscribe();
+
+    // 🔔 Canal realtime para nuevas notificaciones
+    final notificationChannel = Supabase.instance.client.channel(
+      'notifications_channel',
+    );
+
+    notificationChannel.onPostgresChanges(
+      event: PostgresChangeEvent.insert,
+      schema: 'public',
+      table: 'notifications',
+      callback: (payload) {
+        final newRecord = payload.newRecord;
+        final userId = Supabase.instance.client.auth.currentUser?.id;
+
+        if (newRecord != null && newRecord['user_id'] == userId) {
+          _loadNotificationSummary(); // 🔁 actualiza el contador y la lista
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: Text('🔔 Nueva notificación recibida'),
+                backgroundColor: Colors.blueAccent,
+                behavior: SnackBarBehavior.floating,
+                duration: const Duration(seconds: 2),
+              ),
+            );
+          }
+        }
+      },
+    );
+
+    notificationChannel.subscribe();
+  }
 
   @override
   void didChangeDependencies() {
@@ -202,78 +207,11 @@ void initState() {
     }
 
     return PopScope(
-      canPop: true,
-      onPopInvoked: (didPop) async {
-        if (!didPop) {
-          final shouldExit = await showDialog<bool>(
-            context: context,
-            builder: (context) => AlertDialog(
-              title: const Text('¿Salir de la aplicación?'),
-              content: const Text(
-                '¿Estás seguro que deseas cerrar esta pantalla?',
-              ),
-              actions: [
-                TextButton(
-                  onPressed: () => Navigator.of(context).pop(false),
-                  child: const Text('Cancelar'),
-                ),
-                TextButton(
-                  onPressed: () => Navigator.of(context).pop(true),
-                  child: const Text('Salir'),
-                ),
-              ],
-            ),
-          );
-          if (shouldExit ?? false) {
-            Navigator.of(context).pop();
-          }
-        }
-      },
       child: Scaffold(
         appBar: AppBar(
-          title: buildUserHeader(name, role),
-          backgroundColor: AppColors.card,
-          actions: [
-            Stack(
-              children: [
-                IconButton(
-                  icon: const Icon(Icons.notifications),
-                  tooltip: 'Notificaciones',
-                  onPressed: () {
-                    Navigator.pushNamed(context, '/notificaciones');
-                  },
-                ),
-                if (unreadCount > 0)
-                  Positioned(
-                    right: 6,
-                    top: 6,
-                    child: Container(
-                      padding: const EdgeInsets.all(4),
-                      decoration: const BoxDecoration(
-                        color: Colors.red,
-                        shape: BoxShape.circle,
-                      ),
-                      child: Text(
-                        '$unreadCount',
-                        style: const TextStyle(
-                          color: Colors.white,
-                          fontSize: 12,
-                        ),
-                      ),
-                    ),
-                  ),
-              ],
-            ),
-            IconButton(
-              icon: const Icon(Icons.logout, color: Colors.redAccent),
-              tooltip: 'Cerrar sesión',
-              onPressed: () async {
-                await Supabase.instance.client.auth.signOut();
-                if (!mounted) return;
-                Navigator.pushReplacementNamed(context, '/login');
-              },
-            ),
-          ],
+          title: buildCompactHeader(name, role),
+          backgroundColor: AppColors.primary,
+          actions: [buildAppBarActions(context, unreadCount)],
         ),
         body: SafeArea(
           child: RefreshIndicator(
@@ -285,35 +223,9 @@ void initState() {
             child: ListView(
               physics: const AlwaysScrollableScrollPhysics(),
               padding: const EdgeInsets.all(16.0),
+
               children: [
-                FutureBuilder<double>(
-                  future: DashboardService.calculateGroupMemberAverageSum(
-                    userGroups,
-                  ),
-                  builder: (context, snapshot) {
-                    final value = snapshot.data ?? 0.0;
-                    return Card(
-                      color: AppColors.card,
-                      child: ListTile(
-                        title: const Text(
-                          'Suma de promedios por miembro en tus grupos',
-                          style: TextStyle(color: AppColors.textPrimary),
-                        ),
-                        subtitle: Text(
-                          'Bs. ${value.toStringAsFixed(2)}',
-                          style: const TextStyle(
-                            color: AppColors.textSecondary,
-                          ),
-                        ),
-                        trailing: const Icon(
-                          Icons.bar_chart,
-                          color: AppColors.primary,
-                        ),
-                      ),
-                    );
-                  },
-                ),
-                const SizedBox(height: 16),
+                FinancialSummaryWidget(userGroups: userGroups),
                 _buildGroupList(),
                 const SizedBox(height: 16),
                 buildRecentExpensesSection(),
@@ -335,10 +247,7 @@ void initState() {
         onExpansionChanged: (expanded) {
           setState(() => showGroupsExpanded = expanded);
         },
-        leading: const Icon(
-          Icons.group_outlined,
-          color: Color.fromARGB(255, 255, 255, 255),
-        ),
+        leading: const Icon(Icons.group_outlined, color: AppColors.primary),
         title: Align(
           alignment: Alignment.centerLeft,
           child: Row(
@@ -420,6 +329,4 @@ void initState() {
       ),
     );
   }
-
-  
 }
