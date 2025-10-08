@@ -154,10 +154,10 @@ Widget buildRecentExpensesSection() {
         ListTile(
 
 title: const Text(
-  'Gastos Recientessss',
+  'Gastos Recientes',
   style: TextStyle(
     color: AppColors.textPrimary,
-    fontSize: 18,
+    fontSize: 16,
     fontWeight: FontWeight.w600,
   ),
 ),

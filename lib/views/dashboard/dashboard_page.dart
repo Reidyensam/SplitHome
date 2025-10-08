@@ -256,7 +256,7 @@ class _DashboardPageState extends State<DashboardPage> {
               Text(
                 'Grupos Agregados (${userGroups.length})',
                 style: const TextStyle(
-                  fontSize: 18,
+                  fontSize: 16,
                   fontWeight: FontWeight.w500,
                   color: Color.fromARGB(255, 255, 255, 255),
                 ),

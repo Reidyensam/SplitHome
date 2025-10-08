@@ -28,7 +28,7 @@ return Card(
     title: const Text(
       'Resumen Personal Del Mes',
       style: TextStyle(
-        fontSize: 18,
+        fontSize: 16,
         fontWeight: FontWeight.w500,
         color: Colors.white,
       ),
@@ -48,14 +48,17 @@ return Card(
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text(
-                '💰 TU GASTO GLOBAL DEL MES: Bs. ${financialData!['userTotal'].toStringAsFixed(2)}',
-                style: const TextStyle(
-                  color: Color.fromARGB(255, 0, 173, 196),
-                  fontSize: 15,
-                  fontWeight: FontWeight.bold,
-                ),
-              ),
+              Center(
+  child: Text(
+    '💰 TU GASTO GLOBAL DEL MES: Bs. ${financialData!['userTotal'].toStringAsFixed(2)}',
+    style: const TextStyle(
+      color: Color.fromARGB(255, 0, 173, 196),
+      fontSize: 14,
+      fontWeight: FontWeight.bold,
+    ),
+    textAlign: TextAlign.center,
+  ),
+),
               
               const SizedBox(height: 8),
               ...List<Map<String, dynamic>>.from(
