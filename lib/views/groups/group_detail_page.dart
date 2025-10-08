@@ -477,7 +477,7 @@ categories(name, icon, color)
 
     return Scaffold(
       appBar: AppBar(
-        title: Text('Grupo: ${widget.groupName}'),
+        title: Text('${widget.groupName}'),
         backgroundColor: AppColors.primary,
         actions: [
           Padding(
