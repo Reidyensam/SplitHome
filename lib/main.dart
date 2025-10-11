@@ -47,7 +47,7 @@ class SplitHomeApp extends StatelessWidget {
           error: AppColors.error,
         ),
       ),
-      initialRoute: '/login',
+      initialRoute: '/',
       routes: {
         '/login': (context) => const LoginPage(),
         '/dashboard': (context) => const DashboardPage(),
