@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:splithome/services/dashboard_service.dart';
 import 'package:splithome/widgets/dialogs.dart';
 import 'package:splithome/widgets/financial_summary_widget.dart';
 import 'package:splithome/widgets/group_card.dart';
@@ -43,7 +42,6 @@ class _DashboardPageState extends State<DashboardPage> {
     _loadNotificationSummary();
     _loadUserGroups();
 
-    // 🔁 Canal realtime para cambios en grupos
     final groupChannel = Supabase.instance.client.channel(
       'group_members_channel',
     );
@@ -127,25 +125,33 @@ class _DashboardPageState extends State<DashboardPage> {
   }
 
   Future<void> _loadUserData() async {
-    final userId = Supabase.instance.client.auth.currentUser?.id;
-    if (userId == null) {
-      Navigator.pushReplacementNamed(context, '/login');
+  var user = Supabase.instance.client.auth.currentUser;
+
+  // Esperar si el usuario aún no está cargado
+  if (user == null || user.id.isEmpty) {
+    await Future.delayed(const Duration(milliseconds: 500));
+    user = Supabase.instance.client.auth.currentUser;
+    if (user == null || user.id.isEmpty) {
+      if (mounted) {
+        Navigator.pushReplacementNamed(context, '/login');
+      }
       return;
     }
-
-    final response = await Supabase.instance.client
-        .from('users')
-        .select()
-        .eq('id', userId)
-        .single();
-
-    if (!mounted) return;
-    setState(() {
-      name = response['name'] ?? '';
-      role = response['role'] ?? 'user';
-      isLoading = false;
-    });
   }
+
+  final response = await Supabase.instance.client
+      .from('users')
+      .select()
+      .eq('id', user.id)
+      .single();
+
+  if (!mounted) return;
+  setState(() {
+    name = response['name'] ?? '';
+    role = response['role'] ?? 'user';
+    isLoading = false;
+  });
+}
 
   Future<void> _loadNotificationSummary() async {
     final userId = Supabase.instance.client.auth.currentUser?.id;
@@ -222,15 +228,16 @@ class _DashboardPageState extends State<DashboardPage> {
             },
             child: ListView(
               physics: const AlwaysScrollableScrollPhysics(),
-              padding: const EdgeInsets.all(16.0),
-
+              padding: const EdgeInsets.symmetric(
+                horizontal: 16.0,
+                vertical: 4.0,
+              ), 
               children: [
                 FinancialSummaryWidget(userGroups: userGroups),
+                const SizedBox(height: 4), 
                 _buildGroupList(),
-                const SizedBox(height: 16),
-                buildRecentExpensesSection(),
-                const SizedBox(height: 16),
-                buildBalanceButton(context),
+                const SizedBox(height: 4), 
+                buildRecentExpensesSection(context),
               ],
             ),
           ),
@@ -241,7 +248,7 @@ class _DashboardPageState extends State<DashboardPage> {
 
   Widget _buildGroupList() {
     return Card(
-      margin: const EdgeInsets.symmetric(vertical: 8),
+      margin: const EdgeInsets.symmetric(vertical: 1),
       child: ExpansionTile(
         initiallyExpanded: false,
         onExpansionChanged: (expanded) {

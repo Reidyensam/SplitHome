@@ -1,18 +1,30 @@
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
-class SessionRedirectPage extends StatelessWidget {
+class SessionRedirectPage extends StatefulWidget {
   const SessionRedirectPage({super.key});
 
   @override
-  Widget build(BuildContext context) {
+  State<SessionRedirectPage> createState() => _SessionRedirectPageState();
+}
+
+class _SessionRedirectPageState extends State<SessionRedirectPage> {
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _verificarSesion();
+    });
+  }
+
+  Future<void> _verificarSesion() async {
     final session = Supabase.instance.client.auth.currentSession;
 
-    Future.microtask(() async {
-      if (session != null) {
-        final user = Supabase.instance.client.auth.currentUser;
-        if (user == null) return;
+    if (session != null) {
+      final user = Supabase.instance.client.auth.currentUser;
+      if (user == null) return;
 
+      try {
         final userData = await Supabase.instance.client
             .from('users')
             .select('role')
@@ -20,18 +32,33 @@ class SessionRedirectPage extends StatelessWidget {
             .single();
 
         final role = userData['role'];
-        final route = role == 'super_admin' ? '/super_admin_panel' : '/dashboard';
+        final route = role == 'super_admin'
+            ? '/super_admin_panel'
+            : '/dashboard';
 
-        if (context.mounted) {
-          Navigator.pushReplacementNamed(context, route);
+        if (mounted) {
+          Future.microtask(() {
+            Navigator.pushReplacementNamed(context, route);
+          });
         }
-      } else {
-        if (context.mounted) {
-          Navigator.pushReplacementNamed(context, '/login');
+      } catch (e) {
+        if (mounted) {
+          Future.microtask(() {
+            Navigator.pushReplacementNamed(context, '/login');
+          });
         }
       }
-    });
+    } else {
+      if (mounted) {
+        Future.microtask(() {
+          Navigator.pushReplacementNamed(context, '/login');
+        });
+      }
+    }
+  }
 
+  @override
+  Widget build(BuildContext context) {
     return const Scaffold(
       body: Center(child: CircularProgressIndicator()),
     );

@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:splithome/session_redirect_page.dart';
 import 'package:splithome/views/balances/balance_page.dart';
 import 'package:splithome/views/super_admin/super_admin_panel.dart';
 import 'package:splithome/views/groups/edit_group_page.dart';
@@ -25,8 +26,33 @@ Future<void> main() async {
   runApp(const SplitHomeApp());
 }
 
-class SplitHomeApp extends StatelessWidget {
+class SplitHomeApp extends StatefulWidget {
   const SplitHomeApp({super.key});
+
+  @override
+  State<SplitHomeApp> createState() => _SplitHomeAppState();
+}
+
+class _SplitHomeAppState extends State<SplitHomeApp> with WidgetsBindingObserver {
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addObserver(this);
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  @override
+void didChangeAppLifecycleState(AppLifecycleState state) {
+  if (state == AppLifecycleState.detached) {
+    // Solo cierra sesión si la app se cierra completamente
+    // Supabase.instance.client.auth.signOut();
+  }
+}
 
   @override
   Widget build(BuildContext context) {
@@ -57,6 +83,7 @@ class SplitHomeApp extends StatelessWidget {
         '/crearGrupo': (context) => const GroupSetupPage(),
         '/super_admin_panel': (context) => const SuperAdminPanel(),
         '/balances': (context) => const BalancePage(),
+        '/': (context) => const SessionRedirectPage(),
       },
       onGenerateRoute: (settings) {
         if (settings.name == '/group_detail_page') {

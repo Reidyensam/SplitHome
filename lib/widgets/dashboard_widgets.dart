@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../core/constants.dart';
-import 'package:splithome/widgets/expense_card.dart';
 import 'package:splithome/services/dashboard_service.dart';
 
 Widget buildCompactHeader(String name, String role) {
@@ -147,7 +146,7 @@ Widget buildBalanceButton(BuildContext context) {
   );
 }
 
-Widget buildRecentExpensesSection() {
+Widget buildRecentExpensesSection(BuildContext context) {
   final ScrollController _expenseScrollController = ScrollController();
 
   return Card(
@@ -155,19 +154,44 @@ Widget buildRecentExpensesSection() {
     child: Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        ListTile(
-          title: const Text(
-            'Gastos Recientes del Mes',
-            style: TextStyle(
-              color: AppColors.textPrimary,
-              fontSize: 16,
-              fontWeight: FontWeight.w600,
-            ),
+        Padding(
+  padding: const EdgeInsets.symmetric(horizontal: 12.0, vertical: 8.0),
+  child: Row(
+    crossAxisAlignment: CrossAxisAlignment.center,
+    children: [
+      Expanded(
+        child: Text(
+          'Gastos Recientes del Mes',
+          style: TextStyle(
+            color: AppColors.textPrimary,
+            fontSize: 16,
+            fontWeight: FontWeight.w600,
           ),
         ),
+      ),
+      GestureDetector(
+        onTap: () => Navigator.pushNamed(context, '/balances'),
+        child: Column(
+          children: const [
+            Icon(Icons.bar_chart, size: 26, color: AppColors.primary),
+            SizedBox(height: 2),
+            Text(
+              'Balance',
+              style: TextStyle(
+                color: AppColors.primary,
+                fontSize: 12,
+                fontWeight: FontWeight.w500,
+              ),
+            ),
+          ],
+        ),
+      ),
+    ],
+  ),
+),
         const Divider(color: Colors.grey),
         SizedBox(
-          height: 400,
+          height: 430,
           child: FutureBuilder<List<Map<String, dynamic>>>(
             future: DashboardService.getRecentExpensesForUser(),
             builder: (context, snapshot) {
@@ -280,7 +304,7 @@ if (filteredData.isEmpty) {
                                       style: const TextStyle(
                                         fontSize: 16,
                                         fontWeight: FontWeight.w500,
-                                        color: Color.fromARGB(255, 0, 153, 255),
+                                        color: Color.fromARGB(255, 0, 183, 255),
                                       ),
                                     ),
                                     const SizedBox(height: 4),
@@ -297,24 +321,14 @@ if (filteredData.isEmpty) {
                                         const Icon(
                                           Icons.person,
                                           size: 14,
-                                          color: Color.fromARGB(
-                                            255,
-                                            47,
-                                            212,
-                                            5,
-                                          ),
+                                          color: Color.fromARGB(255, 0, 154, 214),
                                         ),
                                         const SizedBox(width: 4),
                                         Text(
                                           addedBy,
                                           style: const TextStyle(
                                             fontSize: 14,
-                                            color: Color.fromARGB(
-                                              255,
-                                              47,
-                                              212,
-                                              5,
-                                            ),
+                                            color: Color.fromARGB(255, 0, 154, 214),
                                           ),
                                         ),
                                       ],

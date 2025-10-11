@@ -17,39 +17,39 @@ class _LoginPageState extends State<LoginPage> {
   String password = '';
 
   void _login() async {
-  if (_formKey.currentState!.validate()) {
-    final auth = AuthService();
-    final response = await auth.signIn(email, password);
+    if (_formKey.currentState!.validate()) {
+      final auth = AuthService();
+      final response = await auth.signIn(email, password);
 
-    if (!mounted) return;
+      if (!mounted) return;
 
-    if (response != null && response.session != null) {
-      final user = Supabase.instance.client.auth.currentUser;
-      if (user == null) return;
+      if (response != null && response.session != null) {
+        final user = Supabase.instance.client.auth.currentUser;
+        if (user == null) return;
 
-      final userData = await Supabase.instance.client
-          .from('users')
-          .select('role')
-          .eq('id', user.id)
-          .single();
+        final userData = await Supabase.instance.client
+            .from('users')
+            .select('role')
+            .eq('id', user.id)
+            .single();
 
-      final role = userData['role'];
+        final role = userData['role'];
 
-      if (role == 'super_admin') {
-        Navigator.pushReplacementNamed(context, '/super_admin_panel');
+        final route = role == 'super_admin'
+            ? '/super_admin_panel'
+            : '/dashboard';
+
+        Navigator.pushReplacementNamed(context, route);
       } else {
-        Navigator.pushReplacementNamed(context, '/dashboard');
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: const Text('Credenciales inválidas o error de conexión'),
+            backgroundColor: AppColors.error,
+          ),
+        );
       }
-    } else {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: const Text('Credenciales inválidas o error de conexión'),
-          backgroundColor: AppColors.error,
-        ),
-      );
     }
   }
-}
 
   @override
   Widget build(BuildContext context) {
