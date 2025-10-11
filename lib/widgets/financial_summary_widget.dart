@@ -26,7 +26,7 @@ return Card(
     },
     leading: const Icon(Icons.person, color: AppColors.primary),
     title: const Text(
-      'Resumen Personal Del Mes',
+      'Resumen Del Mes',
       style: TextStyle(
         fontSize: 16,
         fontWeight: FontWeight.w500,

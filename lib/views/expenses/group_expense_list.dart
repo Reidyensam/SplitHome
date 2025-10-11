@@ -41,7 +41,7 @@ class GroupExpenseList extends StatelessWidget {
             const Icon(Icons.receipt_long, color: AppColors.accent, size: 22),
             const SizedBox(width: 13),
             const Text(
-              'Gastos registrados',
+              'Gastos Registrados',
               style: TextStyle(fontSize: 17, fontWeight: FontWeight.w600),
             ),
             const Spacer(),
