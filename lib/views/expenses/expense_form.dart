@@ -386,7 +386,14 @@ class _ExpenseFormState extends State<ExpenseForm> {
                 ),
                 validator: (value) =>
                     value!.isEmpty ? 'Ingresa un título' : null,
-                onChanged: (value) => title = value,
+                onChanged: (value) {
+                  if (value.isNotEmpty) {
+                    title = value[0].toUpperCase() + value.substring(1);
+                  } else {
+                    title = value;
+                  }
+                  setState(() {});
+                },
               ),
               const SizedBox(height: 16),
               TextFormField(
