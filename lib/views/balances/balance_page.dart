@@ -4,7 +4,6 @@ import 'dart:ui' as ui;
 import 'package:fl_chart/fl_chart.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
-import 'package:path_provider/path_provider.dart';
 import 'package:pdf/widgets.dart' as pw;
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../core/constants.dart';
@@ -294,7 +293,6 @@ class _BalancePageState extends State<BalancePage> {
                         ),
                       ),
 
-                      // Selector de mes
                       SizedBox(
                         width: 150,
                         child: DropdownButtonFormField<String>(
@@ -309,7 +307,6 @@ class _BalancePageState extends State<BalancePage> {
                         ),
                       ),
 
-                      // Selector de categoría
                       SizedBox(
                         width: 180,
                         child: DropdownButtonFormField<String>(
