@@ -185,125 +185,140 @@ class _ExpenseFormState extends State<ExpenseForm> {
   }
 
   Future<void> _submitExpense() async {
-  if (!_formKey.currentState!.validate()) return;
+    if (!_formKey.currentState!.validate()) return;
 
-  final currentUserId = Supabase.instance.client.auth.currentUser?.id;
+    final currentUserId = Supabase.instance.client.auth.currentUser?.id;
 
-  if (currentUserId == null) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('Error: usuario no autenticado')),
-    );
-    return;
+    if (currentUserId == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Error: usuario no autenticado')),
+      );
+      return;
+    }
+
+    final data = {
+      'title': title,
+      'amount': amount,
+      // 🔧 Ajuste: eliminamos fracciones de segundo
+      'date': selectedDate.toIso8601String().split('.').first,
+      'category_id': selectedCategoryId,
+      'group_id': widget.groupId,
+    };
+
+    if (widget.expense == null) {
+      data['user_id'] = currentUserId;
+    }
+
+    // 🗑️ Eliminar comprobante anterior si fue quitado manualmente
+    if (widget.expense != null &&
+        widget.expense!['receipt_url'] != null &&
+        receiptUrl == null &&
+        receiptImage == null) {
+      await Supabase.instance.client.storage.from('receipts').remove([
+        widget.expense!['receipt_url'],
+      ]);
+    }
+
+    if (receiptImage != null) {
+      final imageBytes = await receiptImage!.readAsBytes();
+      final fileName = 'receipt_${DateTime.now().millisecondsSinceEpoch}.jpg';
+
+      await Supabase.instance.client.storage
+          .from('receipts')
+          .uploadBinary(fileName, imageBytes);
+
+      data['receipt_url'] = fileName;
+    } else if (receiptUrl != null) {
+      data['receipt_url'] = receiptUrl;
+    } else {
+      data['receipt_url'] = null;
+    }
+
+    try {
+      debugPrint('📤 Enviando gasto con datos: $data');
+      debugPrint('📅 Fecha enviada: ${data['date']}');
+
+      final currentUserName =
+          Supabase.instance.client.auth.currentUser?.userMetadata?['name'] ??
+          'Alguien';
+      final groupResponse = await Supabase.instance.client
+          .from('groups')
+          .select('name')
+          .eq('id', widget.groupId)
+          .single();
+      final groupName = groupResponse['name'] ?? 'Grupo desconocido';
+
+      if (widget.expense != null) {
+        final originalUserId = widget.expense!['user_id'];
+        if (originalUserId != null) {
+          data['user_id'] = originalUserId;
+        }
+
+        data['updated_by'] = currentUserId;
+
+        await Supabase.instance.client
+            .from('expenses')
+            .update(data)
+            .eq('id', widget.expense!['id']);
+
+        await notifyGroupExpense(
+          actorId: currentUserId,
+          actorName: currentUserName,
+          groupId: widget.groupId,
+          groupName: groupName,
+          expenseName: title,
+          type: 'expense_edit',
+        );
+      } else {
+        await Supabase.instance.client.from('expenses').insert(data);
+
+        await notifyGroupExpense(
+          actorId: currentUserId,
+          actorName: currentUserName,
+          groupId: widget.groupId,
+          groupName: groupName,
+          expenseName: title,
+          type: 'expense_add',
+        );
+      }
+
+      if (context.mounted) Navigator.pop(context, true);
+    } catch (error, stackTrace) {
+      debugPrint('❌ Error al guardar gasto: $error');
+      debugPrint('🪵 StackTrace: $stackTrace');
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('❌ Error al guardar: $error'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    }
   }
-
-  final data = {
-    'title': title,
-    'amount': amount,
-    'date': selectedDate.toIso8601String(),
-    'category_id': selectedCategoryId,
-    'group_id': widget.groupId,
-  };
-
-  if (widget.expense == null) {
-    data['user_id'] = currentUserId;
-  }
-
-  // 🗑️ Eliminar comprobante anterior si fue quitado manualmente
-  if (widget.expense != null &&
-      widget.expense!['receipt_url'] != null &&
-      receiptUrl == null &&
-      receiptImage == null) {
-    await Supabase.instance.client.storage
-        .from('receipts')
-        .remove([widget.expense!['receipt_url']]);
-  }
-
-  if (receiptImage != null) {
-    final imageBytes = await receiptImage!.readAsBytes();
-    final fileName = 'receipt_${DateTime.now().millisecondsSinceEpoch}.jpg';
-
-    await Supabase.instance.client.storage
-        .from('receipts')
-        .uploadBinary(fileName, imageBytes);
-
-    data['receipt_url'] = fileName;
-  } else if (receiptUrl != null) {
-    data['receipt_url'] = receiptUrl;
-  } else {
-    data['receipt_url'] = null; // ✅ fuerza la eliminación en Supabase
-  }
-
-  try {
-  final currentUserName = Supabase.instance.client.auth.currentUser?.userMetadata?['name'] ?? 'Alguien';
-  final groupResponse = await Supabase.instance.client
-      .from('groups')
-      .select('name')
-      .eq('id', widget.groupId)
-      .single();
-  final groupName = groupResponse['name'] ?? 'Grupo desconocido';
-
-if (widget.expense != null) {
-  final originalUserId = widget.expense!['user_id'];
-  if (originalUserId != null) {
-    data['user_id'] = originalUserId;
-  }
-
-  data['updated_by'] = currentUserId;
-
-  await Supabase.instance.client
-      .from('expenses')
-      .update(data)
-      .eq('id', widget.expense!['id']);
-
-    await notifyGroupExpense(
-      actorId: currentUserId,
-      actorName: currentUserName,
-      groupId: widget.groupId,
-      groupName: groupName,
-      expenseName: title,
-      type: 'expense_edit',
-    );
-  } else {
-    await Supabase.instance.client.from('expenses').insert(data);
-
-    await notifyGroupExpense(
-      actorId: currentUserId,
-      actorName: currentUserName,
-      groupId: widget.groupId,
-      groupName: groupName,
-      expenseName: title,
-      type: 'expense_add',
-    );
-  }
-
-  if (context.mounted) Navigator.pop(context, true);
-} catch (error) {
-  if (context.mounted) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text('❌ Error al guardar: $error'),
-        backgroundColor: Colors.red,
-      ),
-    );
-  }
-}
-
-
-
-
-}
 
   Future<void> _pickDate() async {
-    final picked = await showDatePicker(
-      context: context,
-      initialDate: selectedDate,
-      firstDate: DateTime(2000),
-      lastDate: DateTime(2100),
-      locale: const Locale('es'),
-    );
+    try {
+      final DateTime? picked = await showDatePicker(
+        context: context,
+        initialDate: selectedDate,
+        firstDate: DateTime(2000),
+        lastDate: DateTime(2100),
+      );
 
-    if (picked != null && picked != selectedDate) {
-      setState(() => selectedDate = picked);
+      if (picked != null && picked != selectedDate) {
+        setState(() {
+          selectedDate = picked;
+        });
+        debugPrint(
+          '📅 Nueva fecha seleccionada: ${selectedDate.toIso8601String()}',
+        );
+      } else {
+        debugPrint('⚠️ Selección de fecha cancelada o sin cambios');
+      }
+    } catch (e, st) {
+      debugPrint('❌ Error al abrir selector de fecha: $e');
+      debugPrint('🪵 StackTrace: $st');
     }
   }
 
@@ -355,7 +370,7 @@ if (widget.expense != null) {
     return Scaffold(
       appBar: AppBar(
         title: Text(
-          widget.expense != null ? 'Editar gasto' : 'Registrar gasto',
+          widget.expense != null ? 'Editar Gasto' : 'Registrar Gasto',
         ),
       ),
       body: Padding(
@@ -383,10 +398,12 @@ if (widget.expense != null) {
                 onChanged: (value) => amount = double.tryParse(value) ?? 0.0,
               ),
               const SizedBox(height: 16),
+
               Row(
                 children: [
                   Text(
                     'Fecha: ${selectedDate.toLocal().toString().split(' ')[0]}',
+                    style: const TextStyle(fontSize: 16),
                   ),
                   const SizedBox(width: 16),
                   ElevatedButton(
@@ -395,6 +412,7 @@ if (widget.expense != null) {
                   ),
                 ],
               ),
+
               const SizedBox(height: 16),
               DropdownButtonFormField<String>(
                 value: selectedCategoryId,

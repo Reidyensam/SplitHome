@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
-import 'package:splithome/views/expenses/edit_expense_page.dart';
+import 'package:splithome/views/expenses/expense_form.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 
